@@ -9,7 +9,7 @@ from talib import MA
 from talib import ATR
 from talib import SMA
 from typing import Callable
-from combine_ops import *
+from alpha101.world_quant.combine_ops import *
 os.environ["NUMPY_WARN_IF_NO_MEM_POLICY"] = "1"  # 较新版本
 # 或更通用的方式：
 os.environ["NPY_DISABLE_NUMA"] = "1"  # 不相关，忽略

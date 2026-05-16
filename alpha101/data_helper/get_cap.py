@@ -83,7 +83,7 @@ def fetch_market_data_from_coinpaprika(
 
 
 def get_pair_market_caps(pairs, provider: str = "coinpaprika", http_proxy: str = None, https_proxy: str = None) -> pd.DataFrame:
-    cache_json_path = _default_cache_json_path(mode="latest", provider=provider)
+    cache_json_path = _default_cache_json_path(provider=provider)
     try:
         bases = [extract_base_symbol(pair) for pair in pairs]
         market_data_map = fetch_market_data_from_coinpaprika(bases, http_proxy=http_proxy, https_proxy=https_proxy)
@@ -120,13 +120,13 @@ def get_pair_market_caps(pairs, provider: str = "coinpaprika", http_proxy: str =
         )
         return _load_cache_json(cache_json_path)
 
-def get_pair_market_caps_last_and_update(pairs, provider: str = "coinpaprika", http_proxy: str = None, https_proxy: str = None) -> pd.DataFrame:
+def get_pair_market_caps_last_and_update(pairs, provider: str = "coinpaprika", cache_dir: str = "",http_proxy: str = None, https_proxy: str = None) -> pd.DataFrame:
     '''
     Too long to fetch, 
     so we can call history get_pair_market_caps, 
     then call this function to update the cache with new fetch in background for next time.
     '''
-    cache_json_path = _default_cache_json_path(mode="latest", provider=provider)
+    cache_json_path = _default_cache_json_path(cache_dir, provider=provider)
     if not cache_json_path.exists():
         get_pair_market_caps(pairs, provider=provider, http_proxy=http_proxy, https_proxy=https_proxy)
     else:
@@ -136,28 +136,18 @@ def get_pair_market_caps_last_and_update(pairs, provider: str = "coinpaprika", h
             stderr=subprocess.DEVNULL,
         )
         return _load_cache_json(cache_json_path)
-def _default_csv_path(mode: str, start: Optional[str] = None, end: Optional[str] = None) -> Path:
-    cfg = get_config()
-    out_dir = cfg.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if mode == "latest":
-        tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return out_dir / f"pair_market_caps_latest_{tag}.csv"
-    return out_dir / f"pair_market_caps_history_{start}_{end}.csv"
-
 
 def _default_cache_json_path(
-    mode: str,
+    cache_dir: str = "",
     provider: str = "auto",
-    start: Optional[str] = None,
-    end: Optional[str] = None,
 ) -> Path:
-    cfg = get_config()
-    out_dir = cfg.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if mode == "latest":
-        return out_dir / f"pair_market_caps_cache_latest_{provider}.json"
-    return out_dir / f"pair_market_caps_cache_history_{start}_{end}.json"
+    if cache_dir == "":
+        cache_dir = Path('cache_cap_data')
+    else:
+        cache_dir = Path(cache_dir)
+    print('cache dir', cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"pair_market_caps_cache_latest_{provider}.json"
 
 
 def _save_cache_json(df: pd.DataFrame, path: Path) -> None:
