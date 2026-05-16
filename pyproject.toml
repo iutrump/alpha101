@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpha101"
+version = "0.1.0"
+description = "A package for factor search and evaluate, used for freqtrade framework"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "YYDH", email = "867965859@qq.com"}]
+requires-python = ">=3.9" 
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent", 
+]
+dependencies = [
+    # 例如:
+    # "pandas>=1.5",
+    # "numpy>=1.21",
+]
+
+[project.urls]
+Homepage = "https://github.com/yydhYYDH/alpha101"
