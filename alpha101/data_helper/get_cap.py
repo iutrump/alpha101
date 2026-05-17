@@ -23,8 +23,9 @@ def extract_base_symbol(pair: str) -> str:
     """
     Convert futures pair format to base symbol.
     Example: BTC_USDT_USDT -> BTC
+    Example: HAEDAL/USDT:USDT -> HAEDAL
     """
-    return pair.split("_", 1)[0].upper()
+    return pair.split("_", 1)[0].split("/")[0]
 
 
 def fetch_market_data_from_coinpaprika(
