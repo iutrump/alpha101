@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from alpha101.data.alpha_view import Alphas
+from alpha101.data import FactorDataView
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.operator_lib import OPERATOR_REGISTRY, OPERATOR_SPECS, operator_params_by_category
 from alpha101.factors.operator_lib.pandas.regression import ts_alpha, ts_beta, ts_r2, ts_resid
@@ -36,7 +36,7 @@ def test_operator_specs_drive_generation_categories():
 
 
 def test_expression_batch_serial_and_process_match():
-    engine = FastExpressionEngine(Alphas(make_wide_data()))
+    engine = FastExpressionEngine(FactorDataView(make_wide_data()))
     expressions = {"alpha_a": "rank(ts_mean(close, 2))", "alpha_b": "zscore(ts_delta(vwap, 1))"}
 
     serial = engine.evaluate_batch(expressions, progress_bar=False, backend="serial")
