@@ -7,7 +7,7 @@ are used internally for population initialization.
 ## Run
 
 ```bash
-python -m alpha101.factors.factor_search \
+alpha101-factor-search \
   --config configs/alpha101.local.json \
   --strategy genetic \
   --population 30 \

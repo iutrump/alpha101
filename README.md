@@ -146,7 +146,7 @@ python -m alpha101.data.universe \
 ## Factor Search
 
 ```bash
-python -m alpha101.factors.factor_search \
+alpha101-factor-search \
   --config configs/alpha101.local.json \
   --strategy genetic \
   --population 30 \
