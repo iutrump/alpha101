@@ -5,7 +5,7 @@ import pandas as pd
 
 from alpha101.factors.alpha_data import Alphas
 from alpha101.factors.expression import FastExpressionEngine
-from alpha101.factors.operators import OPERATOR_REGISTRY
+from alpha101.factors.operators import OPERATOR_REGISTRY, OPERATOR_SPECS, operator_params_by_category
 
 
 def make_wide_data() -> pd.DataFrame:
@@ -24,6 +24,13 @@ def test_operator_registry_has_explicit_public_names():
     assert "rank" in OPERATOR_REGISTRY
     assert "process_factor_wide_format" in OPERATOR_REGISTRY
     assert "__builtins__" not in OPERATOR_REGISTRY
+
+
+def test_operator_specs_drive_generation_categories():
+    assert OPERATOR_SPECS["ts_mean"].category == "time_series"
+    assert OPERATOR_SPECS["ts_corr"].category == "time_series_dual"
+    assert OPERATOR_SPECS["rank"].category == "cross_section"
+    assert operator_params_by_category("time_series")["ts_mean"] == [3, 12, 20, 30, 60]
 
 
 def test_expression_batch_serial_and_process_match():
