@@ -5,6 +5,14 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
+__all__ = [
+    "make_ts_regression",
+    "ts_beta",
+    "ts_alpha",
+    "ts_resid",
+    "ts_r2",
+]
+
 def make_ts_regression(rettype: int) -> Callable[[pd.DataFrame, pd.DataFrame, int, int], pd.DataFrame]:
     def ts_regression(y: pd.DataFrame, x: pd.DataFrame, d: int, lag: int = 0) -> pd.DataFrame:
         if not y.shape == x.shape:

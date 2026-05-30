@@ -29,6 +29,8 @@ configs/
 
 ## Environment And Install
 
+Create and activate a dedicated conda environment:
+
 ```bash
 conda create -n alpha101 python=3.12
 conda activate alpha101
@@ -44,20 +46,20 @@ git submodule update --init --recursive --depth 1 3rdparty/freqtrade
 Install Freqtrade first:
 
 ```bash
-pip install -r 3rdparty/freqtrade/requirements.txt
-pip install -e 3rdparty/freqtrade
+python -m pip install -r 3rdparty/freqtrade/requirements.txt
+python -m pip install -e 3rdparty/freqtrade
 ```
 
-Then install this project:
+Then install `alpha101` from the repository root:
 
 ```bash
-pip install -e .
+python -m pip install -e .
 ```
 
 For the visual inspection server:
 
 ```bash
-pip install -e ".[visual]"
+python -m pip install -e ".[visual]"
 ```
 
 ## Freqtrade

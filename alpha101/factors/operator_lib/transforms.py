@@ -6,6 +6,12 @@ import pandas as pd
 from alpha101.factors.operator_lib.cross_section import winsorize_mad, zscore
 from alpha101.factors.operator_lib.time_series import ts_decay_linear
 
+__all__ = [
+    "process_factor_wide_format",
+    "if_else",
+    "trade_when",
+]
+
 def process_factor_wide_format(df, delay_days=0, decay_period=0):
     # 1. MAD 去极值
     df_win = winsorize_mad(df, n=3.0)
@@ -43,4 +49,3 @@ def trade_when(condition, alpha, exit=np.nan):
     :return: A DataFrame with trading signals based on the condition.
     """
     return if_else(condition, alpha, exit)
-

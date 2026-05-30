@@ -36,9 +36,17 @@ visual = [
 freqtrade = [
     "freqtrade",
 ]
+dev = [
+    "pytest>=8",
+]
 
 [project.urls]
 Homepage = "https://github.com/yydhYYDH/alpha101"
+
+[project.scripts]
+alpha101-expression = "alpha101.cli.expression:main"
+alpha101-factor-search = "alpha101.cli.factor_search:main"
+alpha101-research-server = "alpha101.cli.research_server:main"
 
 [tool.setuptools.packages.find]
 include = ["alpha101*"]
