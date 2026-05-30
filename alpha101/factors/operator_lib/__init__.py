@@ -1,10 +1,3 @@
-from __future__ import annotations
-
-import numpy as np
-import pandas as pd
-from numpy import abs, log, sign
-
-from alpha101.factors.alpha_data import Alphas
 from alpha101.factors.operator_lib.cross_section import *
 from alpha101.factors.operator_lib.regression import *
 from alpha101.factors.operator_lib.time_series import *

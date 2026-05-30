@@ -1,6 +1,6 @@
 """
 因子生成器模块
-支持多种因子生成策略：随机生成、模板变异、参数化搜索
+支持遗传算法因子挖掘所需的随机初始化、变异和交叉
 """
 import ast
 import copy
@@ -8,8 +8,7 @@ import random
 import numpy as np
 import re
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Optional, Set
-import itertools
+from typing import List, Dict, Tuple, Optional
 
 
 @dataclass(frozen=True)
@@ -548,96 +547,7 @@ class FactorGenerator:
             return FunctionNode(node.name, args)
         return node
     
-    def generate_template_based_factors(self, templates: List[str]) -> List[Tuple[str, str]]:
-        """
-        基于模板生成因子变体
-        
-        Args:
-            templates: 因子模板列表，使用占位符如 {{field}}, {{window}}
-            
-        Returns:
-            (因子名, 因子表达式) 列表
-        """
-        factors = []
-        
-        for template_idx, template in enumerate(templates):
-            # 替换字段占位符
-            for field in self.data_fields:
-                expr = template.replace('{{field}}', field)
-                
-                # 替换窗口占位符
-                for window in [3, 5, 7, 10, 14, 20, 30]:
-                    final_expr = expr.replace('{{window}}', str(window))
-                    
-                    # 替换延迟占位符
-                    for ts_delay in [1, 2, 3, 5]:
-                        final_final_expr = final_expr.replace('{{ts_delay}}', str(ts_delay))
-                        
-                        # 如果还有占位符，跳过
-                        if '{{' in final_final_expr:
-                            continue
-                        
-                        factor_name = f"template_{template_idx}_f{field}_w{window}_d{ts_delay}"
-                        factors.append((factor_name, final_final_expr))
-                        
-                        # 限制每个模板的变体数量
-                        if len([f for f in factors if f[0].startswith(f"template_{template_idx}")]) >= 50:
-                            break
-                    
-                    if len([f for f in factors if f[0].startswith(f"template_{template_idx}")]) >= 50:
-                        break
-                
-                if len([f for f in factors if f[0].startswith(f"template_{template_idx}")]) >= 50:
-                    break
-        
-        return factors
     
-    def generate_grid_search_factors(self) -> List[Tuple[str, str]]:
-        """
-        网格搜索：系统地组合算子和参数
-        
-        Returns:
-            (因子名, 因子表达式) 列表
-        """
-        factors = []
-        idx = 0
-        
-        # 1. 单一时序算子 + 单一字段
-        for field in self.data_fields:
-            for op_name, params in self.ts_operators.items():
-                for param in params[:5]:  # 限制参数数量
-                    expr = f"{op_name}({field}, {param})"
-                    factors.append((f"grid_single_{idx}", expr))
-                    idx += 1
-        
-        # 2. 时序算子组合
-        for field in ['close', 'returns']:
-            for op1, params1 in list(self.ts_operators.items())[:3]:
-                for op2, params2 in list(self.ts_operators.items())[:3]:
-                    p1 = random.choice(params1)
-                    p2 = random.choice(params2)
-                    
-                    # 不同参数的组合
-                    if p1 != p2:
-                        expr = f"{op1}({field}, {p1}) - {op2}({field}, {p2})"
-                        factors.append((f"grid_combo_{idx}", expr))
-                        idx += 1
-        
-        # 3. 延迟对比
-        for field in ['close', 'high', 'low', 'open']:
-            for delay_param in [1, 2, 3, 5]:
-                expr = f"{field} - ts_delay({field}, {delay_param})"
-                factors.append((f"grid_delay_{idx}", expr))
-                idx += 1
-        
-        # 4. 排名相关
-        for field in ['close', 'volume', 'returns']:
-            for window in [5, 10, 20]:
-                expr = f"rank(ts_mean({field}, {window}))"
-                factors.append((f"grid_rank_{idx}", expr))
-                idx += 1
-        
-        return factors
     
     def mutate_expression(self, expr: str) -> str:
         """
@@ -860,61 +770,3 @@ class FactorGenerator:
             args = tuple(self._simplify_ast(arg) for arg in node.args)
             return FunctionNode(node.name, args)
         return node
-
-
-class FactorLibrary:
-    """因子模板库"""
-    
-    # 经典 Alpha101 模式
-    ALPHA101_PATTERNS = [
-        # 动量类
-        "rank(ts_delta({{field}}, {{ts_delay}}))",
-        "ts_rank({{field}}, {{window}})",
-        "{{field}} - ts_delay({{field}}, {{ts_delay}})",
-        "{{field}} / ts_delay({{field}}, {{ts_delay}}) - 1",
-        
-        # 反转类
-        "-1 * rank(ts_rank({{field}}, {{window}}))",
-        "-1 * ts_delta({{field}}, {{ts_delay}})",
-        
-        # 波动率类
-        "ts_std_dev({{field}}, {{window}})",
-        "rank(ts_std_dev({{field}}, {{window}}))",
-        "(ts_max({{field}}, {{window}}) - ts_min({{field}}, {{window}})) / ts_mean({{field}}, {{window}})",
-        
-        # 均值回归
-        "({{field}} - ts_mean({{field}}, {{window}})) / ts_std_dev({{field}}, {{window}})",
-        "rank({{field}} - ts_mean({{field}}, {{window}}))",
-        
-        # 组合类
-        "rank(ts_delta(ts_mean({{field}}, {{window}}), {{ts_delay}}))",
-        "ts_mean(rank({{field}}), {{window}})",
-    ]
-    
-    # Alpha101-style expression patterns
-    COMPLEX_PATTERNS = [
-        "(rank(open - ts_delay(high, 1)) * rank(open - ts_delay(close, 1))) * rank(open - ts_delay(low, 1))",
-        "rank(ts_delta(close, 1)) * rank((-1 * ts_delta(volume, 1)))",
-        "(-1 * rank(ts_rank(close, 5))) * rank(volume - ts_delay(volume, 5))",
-        "rank(volume / ts_mean(volume, 20)) * rank((-1 * ts_delta(close, 7)))",
-    ]
-if __name__ == "__main__":
-    generator = FactorGenerator(seed=42)
-    
-    # 生成随机因子
-    random_factors = [generator.generate_random_factor() for _ in range(1000)]
-    print("随机生成的因子表达式：")
-    for factor in random_factors:
-        print(factor)
-    
-    # 基于模板生成因子
-    template_factors = generator.generate_template_based_factors(FactorLibrary.ALPHA101_PATTERNS)
-    print("\n基于模板生成的因子表达式：")
-    for name, expr in template_factors[:1000]:  # 只展示前10个
-        print(f"{name}: {expr}")
-    
-    # 网格搜索生成因子
-    grid_factors = generator.generate_grid_search_factors()
-    print("\n网格搜索生成的因子表达式：")
-    for name, expr in grid_factors[:10]:  # 只展示前10个
-        print(f"{name}: {expr}")

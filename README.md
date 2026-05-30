@@ -146,8 +146,9 @@ python -m alpha101.data.universe \
 ```bash
 python -m alpha101.factors.factor_search \
   --config configs/alpha101.local.json \
-  --strategy random \
-  --n-factors 100
+  --strategy genetic \
+  --population 30 \
+  --generations 5
 ```
 
 ## Factor Research Server
@@ -155,7 +156,7 @@ python -m alpha101.factors.factor_search \
 The research server is kept as a lightweight factor inspection tool:
 
 ```bash
-python -m alpha101.factors.research_server
+python -m alpha101.research.server
 ```
 
 Then open:
@@ -163,3 +164,13 @@ Then open:
 ```text
 http://127.0.0.1:8001
 ```
+
+## Operator Development
+
+Operator implementations live under `alpha101/factors/operator_lib/`:
+time-series operators, cross-section operators, regression helpers, and
+transforms are split into separate modules. `alpha101/factors/operators.py`
+re-exports them for expression-engine compatibility.
+
+See `skills/alpha101-operator/SKILL.md` for the operator input/output contract
+and validation checklist.

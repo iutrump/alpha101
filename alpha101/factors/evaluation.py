@@ -32,8 +32,10 @@ def score_factor_cross_section(
     *,
     n_quantiles: int = 5,
     forward_periods: int = 1,
+    preprocess: bool = True,
 ) -> dict:
-    factor = process_factor_wide_format(factor)
+    if preprocess:
+        factor = process_factor_wide_format(factor)
     target = forward_returns(close.reindex(columns=factor.columns), forward_periods)
 
     ic_by_date = factor.corrwith(target, axis=1).replace([np.inf, -np.inf], np.nan)

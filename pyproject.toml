@@ -42,3 +42,6 @@ Homepage = "https://github.com/yydhYYDH/alpha101"
 
 [tool.setuptools.packages.find]
 include = ["alpha101*"]
+
+[tool.setuptools.package-data]
+"alpha101.research" = ["templates/*.html"]

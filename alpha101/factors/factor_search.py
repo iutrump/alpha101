@@ -6,15 +6,16 @@ import re
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from alpha101.config import get_config
 from alpha101.data.panel import build_wide_df
-from alpha101.factors.operators import Alphas
-from alpha101.factors.factor_generator import FactorGenerator, FactorLibrary
+from alpha101.factors.alpha_data import Alphas
+from alpha101.factors.factor_generator import FactorGenerator
 from alpha101.factors.expression_engine import FastExpressionEngine
 from alpha101.factors.evaluation import score_factor_cross_section
 
@@ -58,18 +59,6 @@ class FactorSearchEngine:
         out["factor_name"] = factor_name
         out["expression"] = expression
         return out
-
-    def _deduplicate_factor_pairs(self, factors: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-        unique: list[tuple[str, str]] = []
-        local_seen: set[str] = set()
-        for name, expr in factors:
-            norm_expr = self._normalize_expression(expr)
-            if norm_expr in local_seen or norm_expr in self.seen_expressions:
-                continue
-            local_seen.add(norm_expr)
-            self.seen_expressions.add(norm_expr)
-            unique.append((name, norm_expr))
-        return unique
 
     def _new_random_expression(self, max_attempts: int = 50) -> str:
         for _ in range(max_attempts):
@@ -136,56 +125,6 @@ class FactorSearchEngine:
             }
             self.evaluation_cache[self._normalize_expression(factor_expr)] = failed
             return failed
-
-    def random_search(self, n_factors: int = 1000, batch_size: int = 100) -> int:
-        results = []
-        successful_count = 0
-        for i in tqdm(range(n_factors), desc="Random Search"):
-            metrics = self.evaluate_factor(f"random_{i:04d}", self._new_random_expression())
-            results.append(metrics)
-            successful_count += int(metrics["status"] == "success")
-            if (i + 1) % batch_size == 0:
-                self._save_batch_results(results, f"random_batch_{i + 1}")
-                results = []
-        if results:
-            self._save_batch_results(results, "random_batch_final")
-        return successful_count
-
-    def template_search(self, n_templates: int | None = None, batch_size: int = 10) -> int:
-        templates = FactorLibrary.ALPHA101_PATTERNS
-        if n_templates is not None:
-            templates = templates[:n_templates]
-        template_factors = self._deduplicate_factor_pairs(
-            self.generator.generate_template_based_factors(templates)
-        )
-
-        results = []
-        successful_count = 0
-        for i, (factor_name, factor_expr) in enumerate(tqdm(template_factors, desc="Template Search")):
-            metrics = self.evaluate_factor(factor_name, factor_expr)
-            results.append(metrics)
-            successful_count += int(metrics["status"] == "success")
-            if (i + 1) % batch_size == 0:
-                self._save_batch_results(results, f"template_batch_{i + 1}")
-                results = []
-        if results:
-            self._save_batch_results(results, "template_batch_final")
-        return successful_count
-
-    def grid_search(self, batch_size: int = 10) -> int:
-        grid_factors = self._deduplicate_factor_pairs(self.generator.generate_grid_search_factors())
-        results = []
-        successful_count = 0
-        for i, (factor_name, factor_expr) in enumerate(tqdm(grid_factors, desc="Grid Search")):
-            metrics = self.evaluate_factor(factor_name, factor_expr)
-            results.append(metrics)
-            successful_count += int(metrics["status"] == "success")
-            if (i + 1) % batch_size == 0:
-                self._save_batch_results(results, f"grid_batch_{i + 1}")
-                results = []
-        if results:
-            self._save_batch_results(results, "grid_batch_final")
-        return successful_count
 
     def genetic_search(
         self,
@@ -276,8 +215,7 @@ class FactorSearchEngine:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Factor Search Engine")
     parser.add_argument("--config", type=str, default=None, help="Path to configs/alpha101*.json")
-    parser.add_argument("--strategy", type=str, default="random", choices=["random", "template", "grid", "genetic", "all"])
-    parser.add_argument("--n-factors", type=int, default=100)
+    parser.add_argument("--strategy", type=str, default="genetic", choices=["genetic"])
     parser.add_argument("--population", type=int, default=30)
     parser.add_argument("--generations", type=int, default=5)
     parser.add_argument("--output-dir", type=str, default=None)
@@ -303,18 +241,7 @@ def main() -> None:
         forward_periods=args.forward_periods,
     )
 
-    if args.strategy == "random":
-        search_engine.random_search(n_factors=args.n_factors)
-    elif args.strategy == "template":
-        search_engine.template_search()
-    elif args.strategy == "grid":
-        search_engine.grid_search()
-    elif args.strategy == "genetic":
-        search_engine.genetic_search(population_size=args.population, n_generations=args.generations)
-    elif args.strategy == "all":
-        search_engine.random_search(n_factors=args.n_factors)
-        search_engine.template_search()
-        search_engine.grid_search()
+    search_engine.genetic_search(population_size=args.population, n_generations=args.generations)
 
     search_engine.summarize_results()
 

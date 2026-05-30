@@ -119,7 +119,6 @@ class FastExpressionEngine:
             "market_return": self.alpha.market_return,
             "funding": self.alpha.funding,
             "cap": self.alpha.cap,
-            "funding": self.alpha.funding,
             
             # 标准库
             "np": np,
@@ -328,7 +327,7 @@ def parse_args():
 if __name__ == "__main__":
     from alpha101.config import get_config
     from alpha101.data.panel import build_wide_df
-    from alpha101.factors.operators import Alphas
+    from alpha101.factors.alpha_data import Alphas
     cfg = get_config()
     print(f'test start from {cfg.test_start_date} {cfg.test_end_date}')
     wide_data = build_wide_df(cfg.pairs, cfg.lookback_days, cfg.data_root, cfg.timeframe,
