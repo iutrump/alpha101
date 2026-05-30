@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from alpha101.factors.operators import operator_names_by_category, operator_params_by_category
+from alpha101.factors.operator_lib import operator_names_by_category, operator_params_by_category
 
 
 DATA_FIELDS = [

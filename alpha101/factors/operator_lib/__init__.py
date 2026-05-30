@@ -1,8 +1,20 @@
-from alpha101.factors.operator_lib import cross_section, regression, time_series, transforms
+from alpha101.factors.operator_lib.registry import (
+    OPERATOR_MODULES,
+    OPERATOR_REGISTRY,
+    OPERATOR_SPECS,
+    OperatorSpec,
+    operator_names_by_category,
+    operator_params_by_category,
+)
 
-OPERATOR_MODULES = (cross_section, regression, time_series, transforms)
+globals().update(OPERATOR_REGISTRY)
 
-__all__ = []
-for _module in OPERATOR_MODULES:
-    __all__.extend(_module.__all__)
-    globals().update({name: getattr(_module, name) for name in _module.__all__})
+__all__ = [
+    "OPERATOR_MODULES",
+    "OPERATOR_REGISTRY",
+    "OPERATOR_SPECS",
+    "OperatorSpec",
+    "operator_names_by_category",
+    "operator_params_by_category",
+    *sorted(OPERATOR_REGISTRY),
+]

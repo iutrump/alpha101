@@ -5,7 +5,7 @@ import pandas as pd
 
 from alpha101.factors.alpha_data import Alphas
 from alpha101.factors.expression import FastExpressionEngine
-from alpha101.factors.operators import OPERATOR_REGISTRY, OPERATOR_SPECS, operator_params_by_category
+from alpha101.factors.operator_lib import OPERATOR_REGISTRY, OPERATOR_SPECS, operator_params_by_category
 
 
 def make_wide_data() -> pd.DataFrame:

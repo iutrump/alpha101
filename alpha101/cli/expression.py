@@ -8,7 +8,7 @@ from alpha101.config import get_config
 from alpha101.data.panel import build_wide_df
 from alpha101.factors.alpha_data import Alphas
 from alpha101.factors.expression import FastExpressionEngine
-from alpha101.factors.operators import process_factor_wide_format
+from alpha101.factors.operator_lib import process_factor_wide_format
 
 
 def parse_args():

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from alpha101.factors.metrics import information_ratio, max_drawdown, safe_float, sharpe_ratio, win_rate
-from alpha101.factors.operators import process_factor_wide_format
+from alpha101.factors.operator_lib import process_factor_wide_format
 
 
 def forward_returns(close: pd.DataFrame, periods: int = 1) -> pd.DataFrame:

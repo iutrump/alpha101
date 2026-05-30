@@ -6,7 +6,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from alpha101.factors.operators import OPERATOR_REGISTRY
+from alpha101.factors.operator_lib import OPERATOR_REGISTRY
 
 
 def signed_log(x):

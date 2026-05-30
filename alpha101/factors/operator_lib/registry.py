@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-import pandas as pd
-from numpy import abs, log, sign
-
-from alpha101.factors.alpha_data import Alphas
-from alpha101.factors.operator_lib import OPERATOR_MODULES
+from alpha101.factors.operator_lib import cross_section, regression, time_series, transforms
 
 
 @dataclass(frozen=True)
@@ -17,6 +12,8 @@ class OperatorSpec:
     arity: int
     params: tuple[int, ...] = ()
 
+
+OPERATOR_MODULES = (cross_section, regression, time_series, transforms)
 
 OPERATOR_SPECS = {
     "ts_mean": OperatorSpec("ts_mean", "time_series", 1, (3, 12, 20, 30, 60)),
@@ -75,19 +72,12 @@ missing_specs = sorted(name for name in OPERATOR_SPECS if name not in OPERATOR_R
 if missing_specs:
     raise RuntimeError(f"Operator specs reference missing functions: {missing_specs}")
 
-globals().update(OPERATOR_REGISTRY)
 
 __all__ = [
-    "Alphas",
+    "OPERATOR_MODULES",
     "OPERATOR_REGISTRY",
     "OPERATOR_SPECS",
     "OperatorSpec",
     "operator_names_by_category",
     "operator_params_by_category",
-    "np",
-    "pd",
-    "abs",
-    "log",
-    "sign",
-    *sorted(OPERATOR_REGISTRY),
 ]

@@ -22,7 +22,7 @@ def result_is_all_nan(result) -> bool:
 
 
 def prepare_factor_result(result: pd.DataFrame) -> pd.DataFrame:
-    from alpha101.factors.operators import process_factor_wide_format
+    from alpha101.factors.operator_lib import process_factor_wide_format
 
     result.index.name = "date"
     result.columns.name = "symbol"
