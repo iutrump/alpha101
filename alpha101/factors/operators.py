@@ -5,11 +5,7 @@ from numpy import log
 from numpy import sign
 from scipy.stats import rankdata
 import os
-from talib import MA    
-from talib import ATR
-from talib import SMA
 from typing import Callable
-from alpha101.world_quant.combine_ops import *
 os.environ["NUMPY_WARN_IF_NO_MEM_POLICY"] = "1"  # 较新版本
 # 或更通用的方式：
 os.environ["NPY_DISABLE_NUMA"] = "1"  # 不相关，忽略
@@ -248,7 +244,7 @@ def rank(df):
 
 def scale(df, scale=1, longscale=None, shortscale=None):
     """
-    WorldQuant-style cross-sectional scaling.
+    Alpha101-style cross-sectional scaling.
 
     Parameters
     ----------
@@ -329,7 +325,7 @@ def ts_arg_max(df, window=10):
         # numpy argmax 在 axis=0 上操作
         argmax = np.argmax(window_slice, axis=0)
 
-        # +1 符合 WorldQuant 习惯
+        # +1 follows the original Alpha101 convention.
         result[i] = argmax + 1
 
     return pd.DataFrame(result, index=df.index, columns=df.columns)
@@ -352,7 +348,7 @@ def ts_arg_min(df, window=10):
         # numpy argmin 在 axis=0 上操作
         argmin = np.argmin(window_slice, axis=0)
 
-        # +1 符合 WorldQuant 习惯
+        # +1 follows the original Alpha101 convention.
         result[i] = argmin + 1
 
     return pd.DataFrame(result, index=df.index, columns=df.columns)

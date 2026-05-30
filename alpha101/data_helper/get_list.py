@@ -1,3 +1,7 @@
+import argparse
+import json
+from pathlib import Path
+
 import requests
 
 def get_top_n_usdt_futures_symbols(n=-1):
@@ -49,12 +53,23 @@ def get_top_n_usdt_futures_symbols(n=-1):
     top_n = [symbol for symbol, _ in filtered[:n]] if n > 0 else [symbol for symbol, _ in filtered]
 
     return top_n
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Fetch Binance USDT perpetual symbols by spot quote volume.")
+    parser.add_argument("-n", "--top-n", type=int, default=-1)
+    parser.add_argument(
+        "-o",
+        "--output",
+        default="user_data/coins/binance_futures_symbols.json",
+        help="Output JSON path.",
+    )
+    args = parser.parse_args()
+
+    symbols = get_top_n_usdt_futures_symbols(args.top_n)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps({"pair_whitelist": symbols}, indent=2), encoding="utf-8")
+    print(f"Saved {len(symbols)} symbols to {output}")
 
 
-# 示例
-symbols = get_top_n_usdt_futures_symbols()
-print(f"Top {len(symbols)} USDT Futures Symbols:", symbols)
-import json
-with open("user_data/coins/binance_futures_symbols.json", "w", encoding="utf-8") as f:    
-    f.write(json.dumps({"pair_whitelist":symbols}, indent=2))
-print("Saved to user_data/coins/binance_futures_symbols.json")
+if __name__ == "__main__":
+    main()

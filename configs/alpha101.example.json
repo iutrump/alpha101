@@ -1,0 +1,12 @@
+{
+  "data_root": "user_data/data/binance/futures",
+  "strategy_config_path": "configs/freqtrade.example.json",
+  "pairs": [],
+  "timeframe": "4h",
+  "pre_buffer_candles": 200,
+  "trade_per_k_bars": 1,
+  "lookback_days": 0,
+  "test_start_date": "2025-01-01",
+  "test_end_date": "2026-03-30",
+  "output_dir": "factor_search_results"
+}

@@ -11,9 +11,6 @@ from typing import Dict, List, Optional
 import pandas as pd
 import requests
 import sys
-sys.path.append(str(Path(__file__).parent.parent))  # To import from alpha101.futures_ml.config
-sys.path.append(str(Path(__file__).parent))  # To import from alpha101.futures_ml.config
-from futures_ml.config import get_config
 import subprocess
 
 COINPAPRIKA_TICKERS_URL = "https://api.coinpaprika.com/v1/tickers"
@@ -131,10 +128,11 @@ def get_pair_market_caps_last_and_update(pairs, provider: str = "coinpaprika", c
     if not cache_json_path.exists():
         get_pair_market_caps(pairs, provider=provider, http_proxy=http_proxy, https_proxy=https_proxy)
     else:
+        print('Running')
         subprocess.Popen(
             [sys.executable, __file__, "--provider", provider],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            # stdout=subprocess.DEVNULL,
+            # stderr=subprocess.DEVNULL,
         )
         return _load_cache_json(cache_json_path)
 
@@ -183,8 +181,21 @@ def _load_cache_json(path: Path) -> pd.DataFrame:
     raise ValueError("Cache json format is invalid (expected list or dict with data field).")
 
 
+def _read_pairs_from_json(path: Path) -> list[str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if "exchange" in payload:
+        return [p.replace("/", "_").replace(":", "_") for p in payload["exchange"].get("pair_whitelist", [])]
+    return [p.replace("/", "_").replace(":", "_") for p in payload.get("pair_whitelist", [])]
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Get market caps for symbols in futures_ml config pairs.")
+    parser = argparse.ArgumentParser(description="Get market caps for configured crypto futures pairs.")
+    parser.add_argument(
+        "--pairs-json",
+        type=str,
+        default="configs/freqtrade.example.json",
+        help="JSON file containing exchange.pair_whitelist or pair_whitelist.",
+    )
     parser.add_argument("--save-csv", type=str, default="", help="CSV output path. Default is auto-generated.")
     parser.add_argument("--save-json", type=str, default="", help="Optional JSON output path.")
     parser.add_argument(
@@ -208,9 +219,8 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    cfg = get_config()
-    
-    df = get_pair_market_caps(cfg.pairs, provider=args.provider, http_proxy=args.http_proxy, https_proxy=args.https_proxy)
+    pairs = _read_pairs_from_json(Path(args.pairs_json))
+    df = get_pair_market_caps(pairs, provider=args.provider, http_proxy=args.http_proxy, https_proxy=args.https_proxy)
 
     if args.save_json:
         json_path = Path(args.save_json)
@@ -224,6 +234,12 @@ def main() -> None:
             encoding="utf-8",
         )
         print(f"Saved JSON: {json_path}")
+
+    if args.save_csv:
+        csv_path = Path(args.save_csv)
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(csv_path, index=False)
+        print(f"Saved CSV: {csv_path}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+
+def normalize_pair(pair: str) -> str:
+    return pair.replace("/", "_").replace(":", "_")
+
+
+@dataclass
+class ProjectConfig:
+    data_root: Path = Path("user_data/data/binance/futures")
+    pairs: list[str] = field(default_factory=list)
+    timeframe: str = "4h"
+    pre_buffer_candles: int = 200
+    trade_per_k_bars: int = 1
+    lookback_days: int = 0
+    test_start_date: Optional[str] = "2025-01-01"
+    test_end_date: Optional[str] = "2026-03-30"
+    strategy_config_path: Path = Path("configs/freqtrade.example.json")
+    output_dir: Path = Path("factor_search_results")
+
+
+def _load_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_pairs_from_strategy(path: Path) -> list[str]:
+    payload = _load_json(path)
+    pairs = payload.get("exchange", {}).get("pair_whitelist", [])
+    return [normalize_pair(pair) for pair in pairs]
+
+
+def get_config(config_path: str | Path | None = None) -> ProjectConfig:
+    config_path = config_path or os.getenv("ALPHA101_CONFIG", "configs/alpha101.example.json")
+    cfg = ProjectConfig()
+    payload = _load_json(Path(config_path))
+    for key, value in payload.items():
+        if not hasattr(cfg, key):
+            continue
+        if key.endswith("_path") or key in {"data_root", "output_dir"}:
+            value = Path(value)
+        setattr(cfg, key, value)
+
+    if not cfg.pairs:
+        cfg.pairs = load_pairs_from_strategy(cfg.strategy_config_path)
+    return cfg

@@ -1,15 +1,8 @@
-import sys
-
 import pandas as pd
 import numpy as np
-from pathlib import Path
 from tqdm import tqdm
 import os
-repo_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(repo_root))
-
-from alpha101.world_quant import Alpha101_code_1
-from alpha101.futures_ml.config import get_config
+from alpha101.factors import operators
 import re
 import inspect
 from typing import Dict
@@ -41,8 +34,8 @@ def _remove_comments(code: str) -> str:
 def _init_fast_worker(alpha_fields: dict) -> None:
     """Initialize per-process globals once for factor evaluation."""
     global _FAST_WORKER_ENV_BASE, _FAST_WORKER_PROCESS_FACTOR
-    from alpha101.world_quant import Alpha101_code_1 as _aq
-    from alpha101.world_quant.Alpha101_code_1 import process_factor_wide_format as _process_factor_wide_format
+    from alpha101.factors import operators as _aq
+    from alpha101.factors.operators import process_factor_wide_format as _process_factor_wide_format
 
     env = {
         "open": alpha_fields["open"],
@@ -112,7 +105,7 @@ class FastExpressionEngine:
     def _build_env(self):
         """
         构造 eval 执行环境
-        自动注入 Alpha101_code_1 中的所有函数
+        自动注入 operators 中的所有函数
         """
         env = {
             # 数据字段
@@ -139,8 +132,8 @@ class FastExpressionEngine:
             "exp": np.exp
         }
         
-        # 自动注入 Alpha101_code_1 中的所有函数
-        for name, obj in inspect.getmembers(Alpha101_code_1):
+        # 自动注入 operators 中的所有函数
+        for name, obj in inspect.getmembers(operators):
             if callable(obj) and not name.startswith('_'):
                 # 排除类和模块
                 if not inspect.isclass(obj) and not inspect.ismodule(obj):
@@ -211,7 +204,7 @@ class FastExpressionEngine:
         Returns:
             拼接后的 DataFrame，列为 MultiIndex (factor_name, symbol)
         """
-        from alpha101.world_quant.Alpha101_code_1 import process_factor_wide_format
+        from alpha101.factors.operators import process_factor_wide_format
         
         def _eval_one(factor_name: str, expr: str):
             try:
@@ -310,50 +303,12 @@ class FastExpressionEngine:
         final_result = pd.concat(concatenated_results, axis=1)
         return final_result
     
-    def evaluate_batch_with_backtest(self, expressions: Dict[str, str], 
-                                     wide_data: pd.DataFrame,
-                                     n_quintiles: int = 5,
-                                     progress_bar: bool = True) -> pd.DataFrame:
-        """
-        批量计算因子并直接进行回测
-        
-        Args:
-            expressions: 字典，键为因子名称，值为表达式字符串
-            wide_data: 原始宽表数据（包含 open, high, low, close, volume 等）
-            n_quintiles: 分层回测的分位数
-            progress_bar: 是否显示进度条
-            
-        Returns:
-            回测结果 DataFrame
-        """
-        # 计算所有因子
-        factor_results = self.evaluate_batch(expressions, progress_bar=progress_bar)
-        
-        if factor_results.empty:
-            print("No factors to backtest")
-            return pd.DataFrame()
-        
-        # 拼接因子数据与原始数据
-        combined_data = pd.concat([wide_data, factor_results], axis=1)
-        
-        # 跳过前一年预热期
-        combined_data = combined_data.iloc[365:]
-        
-        # 执行回测
-        factor_names = list(expressions.keys())
-        from alpha101.futures_ml.alpha_sharpe import stratified_backtest
-        backtest_results = stratified_backtest(
-            combined_data, 
-            factor_names, 
-            target_col='target',
-            n_quintiles=n_quintiles
-        )
-        
-        return backtest_results
 import argparse
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='WorldQuant Alpha101 风格因子挖掘工具',
+        description='Evaluate an Alpha101-style factor expression.',
     )
     parser.add_argument(
         '-f', '--file',
@@ -368,15 +323,17 @@ def parse_args():
         help='因子表达式（直接输入，无需 --expression）'
     )
     return parser.parse_args()        
+
+
 if __name__ == "__main__":
-    # 示例用法
+    from alpha101.config import get_config
+    from alpha101.data import build_wide_df
+    from alpha101.factors.operators import Alphas
     cfg = get_config()
-    from alpha101.futures_ml.data import build_wide_df
-    from alpha101.world_quant.Alpha101_code_1 import Alphas
     print(f'test start from {cfg.test_start_date} {cfg.test_end_date}')
     wide_data = build_wide_df(cfg.pairs, cfg.lookback_days, cfg.data_root, cfg.timeframe,
                               test_start_date=cfg.test_start_date, test_end_date=cfg.test_end_date, buffer=cfg.pre_buffer_candles)
-    stock = Alphas(wide_data)  # 初始化股票数据
+    stock = Alphas(wide_data)
     engine = FastExpressionEngine(stock)
     args = parse_args()
     if args.file:
@@ -387,30 +344,14 @@ if __name__ == "__main__":
     
     if not fast_expression:
         print("Error: No expression provided")
-        print("Usage: python fastengine.py <expression>")
+        print("Usage: python -m alpha101.factors.expression_engine <expression>")
         exit(1)
-    # """
-    # #    -( ts_mean(close, 5)+ts_mean(close, 10))
-    # #    (ts_mean(returns, 7)+ts_mean(returns, 14))
-    # # (((-1 * rank((open - ts_delay(high, 1)))) * rank((open - ts_delay(close, 1)))) * rank((open -ts_delay(low, 1))))
-    # # -scale(ts_rank(close, 5))
-    # # scale(ts_max(returns, 7)) - returns
-    # # (ts_rank(((high) / (abs(close) + 0.001)) / (abs(scale(returns)) + 0.001), 10)) + ((close) + (ts_arg_max(ts_arg_max(ts_std_dev(open, 60), 30), 10)))
-    # # (ts_std_dev(ts_delta((open) * (open), 5), 10)) + (((ts_std_dev(ts_delay(ts_mean(high, 20), 1), 10)) - (rank(rank((close) * (volume))))) - (ts_mean(ts_min(scale(close), 20), 30)))
-    # # -ts_std_dev(ts_delay(ts_mean(high, 20), 1), 10)
-    # # -(zscore(ts_mean(scale(high), 14)) - zscore((ts_std_dev(ts_delay(ts_mean(high, 20), 1), 10)) - zscore(rank((close) * (volume)))))
-    # # -ts_std_dev(ts_delta(volume, 2), 30)
-    # # (ts_std_dev(ts_delay(ts_mean(high, 20), 1), 10))   - (rank((close) * (volume)))
-    # # -((ts_mean(scale(scale(high)), 14)) - ((ts_std_dev(ts_delay(ts_mean(high, 20), 1), 10)) - (rank(rank((close) * (volume))))))
-    # # zscore(ts_mean(scale(high), 14)) - zscore(rank((close) * (volume)))
-    # (ts_arg_max(ts_min(ts_std_dev(returns, 20), 5), 20))
-    # """
+
     result = engine.evaluate(fast_expression)
-    # wide_data['alpha_test'] = result
     print(result)
 
     # factor_df: index=date, columns=symbol
-    from alpha101.world_quant.Alpha101_code_1 import process_factor_wide_format
+    from alpha101.factors.operators import process_factor_wide_format
     result.index.name = 'date'
     result.columns.name = 'symbol'
     result = process_factor_wide_format(result)
@@ -419,25 +360,6 @@ if __name__ == "__main__":
         [["alpha_test"], result.columns]
     )
 
-    # 与原 panel 拼接
-    # 一天多少seconds
     n_bars = int(cfg.pre_buffer_candles*pd.Timedelta('1d').total_seconds()//pd.Timedelta(cfg.timeframe).total_seconds())
     df = pd.concat([wide_data, result], axis=1).iloc[n_bars:]
-    from alpha101.futures_ml.alpha_sharpe import stratified_backtest
-    backtest_df = stratified_backtest(df, ['alpha_test'], k_bars=cfg.trade_per_k_bars,n_quintiles=5, freq=cfg.timeframe)
-    # backtest_df = stratified_backtest(df, ['alpha_test'], k_bars=16, factor_agg='std')
-    
-    # ==================== 批量计算因子示例 ====================
-    # expressions = {
-    #     'factor_1': 'ts_rank(close, 10)',
-    #     'factor_2': 'rank(ts_mean(close, 5) - ts_mean(close, 10))',
-    #     'factor_3': 'ts_corr(close, volume, 20)',
-    # }
-    # 
-    # # 方式1：仅计算因子，不回测
-    # factor_results = engine.evaluate_batch(expressions)
-    # print(factor_results.head())
-    # 
-    # # 方式2：计算因子并直接回测
-    # backtest_results = engine.evaluate_batch_with_backtest(expressions, wide_data)
-    # print(backtest_results)
+    print(df.tail())

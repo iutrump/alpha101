@@ -5,21 +5,40 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alpha101"
 version = "0.1.0"
-description = "A package for factor search and evaluate, used for freqtrade framework"
+description = "Crypto factor mining toolkit with Alpha101-style factor expressions."
 readme = "README.md"
-license = {file = "LICENSE"}
-authors = [{name = "YYDH", email = "867965859@qq.com"}]
-requires-python = ">=3.9" 
+license = { file = "LICENSE" }
+authors = [{ name = "YYDH", email = "867965859@qq.com" }]
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent", 
+    "Operating System :: OS Independent",
 ]
 dependencies = [
-    # 例如:
-    # "pandas>=1.5",
-    # "numpy>=1.21",
+    "numpy>=1.23",
+    "pandas>=1.5",
+    "pyarrow>=10",
+    "requests>=2.28",
+    "scipy>=1.9",
+    "tqdm>=4.64",
+]
+
+[project.optional-dependencies]
+visual = [
+    "fastapi>=0.100",
+    "pydantic>=2",
+    "uvicorn>=0.22",
+]
+freqtrade = [
+    "freqtrade",
 ]
 
 [project.urls]
 Homepage = "https://github.com/yydhYYDH/alpha101"
+
+[tool.setuptools.packages.find]
+include = ["alpha101*"]

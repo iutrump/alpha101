@@ -1,0 +1,4 @@
+[submodule "3rdparty/freqtrade"]
+	path = 3rdparty/freqtrade
+	url = https://github.com/freqtrade/freqtrade.git
+	shallow = true

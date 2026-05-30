@@ -9,17 +9,13 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-import sys
-from pathlib import Path
-sys.path.append(str((Path(__file__).parent.parent.parent).resolve()))
-from alpha101.futures_ml.config import get_config
-from alpha101.futures_ml.data import build_wide_df
-from alpha101.futures_ml.alpha_sharpe import _nan_rowwise_corr, _sample_indices_after_agg
-from alpha101.world_quant.Alpha101_code_1 import Alphas, process_factor_wide_format
-from alpha101.world_quant.fastengine import FastExpressionEngine
+from alpha101.config import get_config
+from alpha101.data import build_wide_df, nan_rowwise_corr, sample_indices_after_agg
+from alpha101.factors.operators import Alphas, process_factor_wide_format
+from alpha101.factors.expression_engine import FastExpressionEngine
 
 
-app = FastAPI(title="WorldQuant FastEngine Backtest API", version="1.0.0")
+app = FastAPI(title="Alpha101 Factor Research Server", version="1.0.0")
 
 _context_lock = threading.Lock()
 _context: dict[str, Any] | None = None
@@ -127,7 +123,7 @@ def _compute_curve_and_metrics(
     else:
         target_forward_full = target_raw_full
 
-    sampled_idx = _sample_indices_after_agg(len(panel_df), k_bars)
+    sampled_idx = sample_indices_after_agg(len(panel_df), k_bars)
     if sampled_idx.size == 0:
         raise ValueError("No sampled bars available after aggregation")
 
@@ -223,7 +219,7 @@ def _compute_curve_and_metrics(
     avg_long_funding = float(avg_long_funding_sum / funding_count) if funding_count > 0 else 0.0
     avg_short_funding = float(avg_short_funding_sum / funding_count) if funding_count > 0 else 0.0
 
-    ic_series = _nan_rowwise_corr(factor_eval_raw, target_eval_raw)
+    ic_series = nan_rowwise_corr(factor_eval_raw, target_eval_raw)
     ic_mean = float(np.nanmean(ic_series)) if ic_series.size > 0 else 0.0
     ic_std = float(np.nanstd(ic_series, ddof=1)) if np.isfinite(ic_series).sum() > 1 else 0.0
     ic_ir = ic_mean / (ic_std + 1e-8)
@@ -283,7 +279,7 @@ def home() -> HTMLResponse:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FastEngine Factor Backtest</title>
+  <title>Alpha101 Factor Research Lab</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
     :root { --bg:#f4efe6; --panel:#fffaf1; --ink:#1f1b16; --soft:#6d6357; --accent:#be4f2e; --line:#d7c9b7; }
@@ -306,7 +302,7 @@ def home() -> HTMLResponse:
 <body>
   <div class="app">
     <section class="panel">
-      <h1>Factor Expression Backtest</h1>
+      <h1>Factor Research Lab</h1>
       <div class="muted">Enter a factor expression and click Run to view the PnL curve and metrics.</div>
       <textarea id="expr">ts_alpha(close, low, 14)</textarea>
       <div class="row control-row">
@@ -466,4 +462,4 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    uvicorn.run("alpha101.world_quant.backtest_server:app", host="0.0.0.0", port=8001, reload=False)
+    uvicorn.run("alpha101.factors.research_server:app", host="0.0.0.0", port=8001, reload=False)

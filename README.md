@@ -1,22 +1,153 @@
-### 想法
-选取交易量前几名的加密货币，输入过去几天的alpha因子，利用机器学习xgboost等模型，预测未来一天的涨跌幅度。做多选取的前4种货币，做空后4种加密货币
+# alpha101
 
-现在需要搭建训练和回测以及可视化的平台
-### 训练
-alpha因子在`alpha101\world_quant\101Alpha_code_1.py`
+`alpha101` is a crypto factor research toolkit focused on Alpha101-style factor
+definition, expression generation, factor search, and lightweight visual
+inspection.
 
-取前7天的alpha因子进行试验，用xgboost模型，80%的时间训练，后20%时间周期的用于测试
-### 回测
-在每天0点以开盘价格买入，设置2%的止盈和2%的止损，以1h为周期查看当前的价格
-### 可视化
-将每天的收益可视化，与大盘对比，并且计算盈利和sharpe值
+The repository uses Freqtrade only as an optional third-party data backend. At
+this stage Freqtrade is responsible for downloading exchange data; this project
+keeps the factor mining code independent from the trading framework.
 
-### 币种和数据
-#### 路径
-`user_data\data\binance\futures\ADA_USDT_USDT-1d-futures.feather`
-`user_data\data\binance\futures\ADA_USDT_USDT-1h-futures.feather`
-...
-交易时间
-20240801-20251231
-3m 15m 1h 1d
-BTC/USDT:USDT ZEC/USDT:USDT XRP/USDT:USDT  BNB/USDT:USDT   ADA/USDT:USDT SOL/USDT:USDT  DOGE/USDT:USDT ETH/USDT:USDT LINK/USDT:USDT
+## Repository Layout
+
+```text
+alpha101/
+  config.py                  # JSON/env config loader
+  data.py                    # Freqtrade feather data loader
+  data_helper/               # Data download and market-cap helper scripts
+  factors/                   # Alpha operators, expression engine, factor search, research server
+configs/
+  alpha101.example.json      # Project config example
+  freqtrade.example.json     # Freqtrade config example
+3rdparty/
+  freqtrade/                 # Optional Freqtrade submodule
+```
+
+## Environment And Install
+
+```bash
+conda create -n alpha101 python=3.12
+conda activate alpha101
+python -m pip install --upgrade pip
+```
+
+Initialize the shallow Freqtrade submodule:
+
+```bash
+git submodule update --init --recursive --depth 1 3rdparty/freqtrade
+```
+
+Install Freqtrade first:
+
+```bash
+pip install -r 3rdparty/freqtrade/requirements.txt
+pip install -e 3rdparty/freqtrade
+```
+
+Then install this project:
+
+```bash
+pip install -e .
+```
+
+For the visual inspection server:
+
+```bash
+pip install -e ".[visual]"
+```
+
+## Freqtrade
+
+Recommended: keep Freqtrade as a shallow submodule to avoid cloning its full
+history.
+
+```bash
+git submodule add --depth 1 https://github.com/freqtrade/freqtrade.git 3rdparty/freqtrade
+git submodule update --init --recursive --depth 1 3rdparty/freqtrade
+```
+
+For users cloning this repository later:
+
+```bash
+git clone <repo-url>
+cd alpha101
+git submodule update --init --recursive --depth 1 3rdparty/freqtrade
+```
+
+Important: `--depth 1` on `git submodule add` makes the initial add shallow, but
+future users still need `--depth 1` on `git submodule update` unless the
+submodule is also configured as shallow in `.gitmodules`.
+
+You can also skip the submodule and use a system-installed Freqtrade CLI:
+
+```bash
+pip install freqtrade
+python -m alpha101.data_helper.download --freqtrade-bin freqtrade
+```
+
+## Configuration
+
+Runtime configuration is JSON-first. Copy the examples before local changes:
+
+```bash
+cp configs/alpha101.example.json configs/alpha101.local.json
+cp configs/freqtrade.example.json configs/freqtrade.local.json
+```
+
+Then point the project to your local config:
+
+```bash
+export ALPHA101_CONFIG=configs/alpha101.local.json
+```
+
+## Download Data
+
+```bash
+python -m alpha101.data_helper.download \
+  --freqtrade-bin freqtrade \
+  --config configs/freqtrade.local.json \
+  --timeframes 1h 4h 1d \
+  --timerange 20250101-20260330
+```
+
+Downloaded data is expected under:
+
+```text
+user_data/data/binance/futures/
+```
+
+with Freqtrade feather files such as:
+
+```text
+BTC_USDT_USDT-4h-futures.feather
+ETH_USDT_USDT-4h-futures.feather
+```
+
+`alpha101.data_helper.market_cap` is kept for research features that need
+`market_cap_usd` or `circulating_supply`. Freqtrade has `MarketCapPairList`, but
+that plugin is for pairlist ranking/filtering by CoinGecko market-cap rank; it
+does not write market-cap or circulating-supply columns into the local factor
+research panel.
+
+## Factor Search
+
+```bash
+python -m alpha101.factors.factor_search \
+  --config configs/alpha101.local.json \
+  --strategy random \
+  --n-factors 100
+```
+
+## Factor Research Server
+
+The research server is kept as a lightweight factor inspection tool:
+
+```bash
+python -m alpha101.factors.research_server
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8001
+```

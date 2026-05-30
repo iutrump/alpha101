@@ -891,7 +891,7 @@ class FactorLibrary:
         "ts_mean(rank({{field}}), {{window}})",
     ]
     
-    # WorldQuant 101 类似模式
+    # Alpha101-style expression patterns
     COMPLEX_PATTERNS = [
         "(rank(open - ts_delay(high, 1)) * rank(open - ts_delay(close, 1))) * rank(open - ts_delay(low, 1))",
         "rank(ts_delta(close, 1)) * rank((-1 * ts_delta(volume, 1)))",
