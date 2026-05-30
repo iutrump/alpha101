@@ -5,13 +5,14 @@ from typing import Any
 
 import pandas as pd
 
-from alpha101.factors.evaluation import score_factor_cross_section
+from alpha101.factors.evaluation import forward_returns_array, score_factor_cross_section_array
 from alpha101.factors.expression.runtime import build_eval_env, normalize_expression_code
 from alpha101.factors.expression.worker import prepare_factor_result, result_is_all_nan
 
 
 _SEARCH_WORKER_ENV_BASE: dict[str, Any] | None = None
-_SEARCH_WORKER_CLOSE: pd.DataFrame | None = None
+_SEARCH_WORKER_CLOSE_COLUMNS: pd.Index | None = None
+_SEARCH_WORKER_TARGET: Any = None
 _SEARCH_WORKER_N_QUANTILES = 5
 _SEARCH_WORKER_FORWARD_PERIODS = 1
 _SEARCH_WORKER_MIN_OBS = 30
@@ -25,13 +26,15 @@ def init_search_worker(
     min_obs: int,
 ) -> None:
     global _SEARCH_WORKER_ENV_BASE
-    global _SEARCH_WORKER_CLOSE
+    global _SEARCH_WORKER_CLOSE_COLUMNS
+    global _SEARCH_WORKER_TARGET
     global _SEARCH_WORKER_N_QUANTILES
     global _SEARCH_WORKER_FORWARD_PERIODS
     global _SEARCH_WORKER_MIN_OBS
 
     _SEARCH_WORKER_ENV_BASE = build_eval_env(fields)
-    _SEARCH_WORKER_CLOSE = close
+    _SEARCH_WORKER_CLOSE_COLUMNS = close.columns
+    _SEARCH_WORKER_TARGET = forward_returns_array(close.to_numpy(dtype=float, copy=False), forward_periods)
     _SEARCH_WORKER_N_QUANTILES = n_quantiles
     _SEARCH_WORKER_FORWARD_PERIODS = forward_periods
     _SEARCH_WORKER_MIN_OBS = min_obs
@@ -40,7 +43,7 @@ def init_search_worker(
 def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str | None, str | None]:
     factor_name, expr = item
     try:
-        if _SEARCH_WORKER_ENV_BASE is None or _SEARCH_WORKER_CLOSE is None:
+        if _SEARCH_WORKER_ENV_BASE is None or _SEARCH_WORKER_CLOSE_COLUMNS is None or _SEARCH_WORKER_TARGET is None:
             raise RuntimeError("Search worker was not initialized")
 
         env = dict(_SEARCH_WORKER_ENV_BASE)
@@ -58,12 +61,13 @@ def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str |
             raise ValueError("All NaN result")
 
         factor = prepare_factor_result(result)
-        metrics = score_factor_cross_section(
-            factor,
-            _SEARCH_WORKER_CLOSE.reindex(columns=factor.columns),
+        target_indices = _SEARCH_WORKER_CLOSE_COLUMNS.get_indexer(factor.columns)
+        if (target_indices < 0).any():
+            raise ValueError("Factor contains symbols missing from close target")
+        metrics = score_factor_cross_section_array(
+            factor.to_numpy(dtype=float, copy=False),
+            _SEARCH_WORKER_TARGET[:, target_indices],
             n_quantiles=_SEARCH_WORKER_N_QUANTILES,
-            forward_periods=_SEARCH_WORKER_FORWARD_PERIODS,
-            preprocess=False,
         )
         if metrics["obs_count"] < _SEARCH_WORKER_MIN_OBS:
             raise ValueError(f"Insufficient observations: {metrics['obs_count']} < {_SEARCH_WORKER_MIN_OBS}")

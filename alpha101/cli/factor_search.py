@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--forward-periods", type=int, default=1)
     parser.add_argument("--backend", type=str, default="auto", choices=["auto", "process", "serial"])
     parser.add_argument("--n-jobs", type=int, default=None, help="Parallel workers for batch expression evaluation.")
+    parser.add_argument("--profile", action="store_true", help="Print per-generation timing breakdown.")
     args = parser.parse_args()
 
     cfg = get_config(args.config)
@@ -43,6 +44,7 @@ def main() -> None:
         n_generations=args.generations,
         backend=args.backend,
         max_workers=args.n_jobs,
+        profile=args.profile,
     )
     search_engine.summarize_results()
 

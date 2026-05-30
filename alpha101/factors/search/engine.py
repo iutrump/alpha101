@@ -4,7 +4,9 @@ import re
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import contextmanager
 from datetime import datetime
+from concurrent.futures import Executor
 from typing import Dict
 
 import pandas as pd
@@ -42,6 +44,7 @@ class FactorSearchEngine:
         self.seen_expressions: set[str] = set()
         self.max_complexity = 36.0
         self.min_obs = 30
+        self._metrics_executor: ProcessPoolExecutor | None = None
 
     def normalize_expression(self, expr: str) -> str:
         try:
@@ -195,21 +198,15 @@ class FactorSearchEngine:
 
         results: dict[str, tuple[dict | None, str | None, str | None]] = {}
         pbar = tqdm(total=len(items), desc="Evaluating factors (metrics)") if progress_bar else None
-        with ProcessPoolExecutor(
-            max_workers=max_workers,
-            initializer=init_search_worker,
-            initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs),
-        ) as executor:
-            future_map = {executor.submit(evaluate_search_item, item): item[0] for item in items}
-            for future in as_completed(future_map):
-                factor_name = future_map[future]
-                try:
-                    name, metrics, error, error_traceback = future.result()
-                    results[name] = (metrics, error, error_traceback)
-                except Exception:
-                    results[factor_name] = (None, "Worker failed", traceback.format_exc())
-                if pbar is not None:
-                    pbar.update(1)
+        if self._metrics_executor is not None:
+            self._collect_metric_results(self._metrics_executor, items, results, pbar)
+        else:
+            with ProcessPoolExecutor(
+                max_workers=max_workers,
+                initializer=init_search_worker,
+                initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs),
+            ) as executor:
+                self._collect_metric_results(executor, items, results, pbar)
         if pbar is not None:
             pbar.close()
         return results
@@ -222,16 +219,19 @@ class FactorSearchEngine:
         crossover_rate: float = 0.5,
         backend: str = "auto",
         max_workers: int | None = None,
+        profile: bool = False,
     ) -> dict | None:
-        return genetic_search(
-            self,
-            population_size=population_size,
-            n_generations=n_generations,
-            mutation_rate=mutation_rate,
-            crossover_rate=crossover_rate,
-            backend=backend,
-            max_workers=max_workers,
-        )
+        with self._metrics_worker_pool(backend=backend, max_workers=max_workers):
+            return genetic_search(
+                self,
+                population_size=population_size,
+                n_generations=n_generations,
+                mutation_rate=mutation_rate,
+                crossover_rate=crossover_rate,
+                backend=backend,
+                max_workers=max_workers,
+                profile=profile,
+            )
 
     def save_batch_results(self, results: list[Dict], batch_name: str) -> None:
         self.results.save_batch(results, batch_name)
@@ -271,6 +271,45 @@ class FactorSearchEngine:
         if sys.platform == "win32":
             return "serial"
         return "process"
+
+    @contextmanager
+    def _metrics_worker_pool(self, *, backend: str, max_workers: int | None):
+        resolved_backend = self._resolve_batch_backend(backend, 2, max_workers)
+        if resolved_backend != "process":
+            yield
+            return
+
+        fields = alpha_fields(self.alpha_obj)
+        close = self.wide_data["close"]
+        worker_count = max_workers if max_workers is not None else _cpu_count()
+        self._metrics_executor = ProcessPoolExecutor(
+            max_workers=max(1, int(worker_count)),
+            initializer=init_search_worker,
+            initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs),
+        )
+        try:
+            yield
+        finally:
+            self._metrics_executor.shutdown(wait=True)
+            self._metrics_executor = None
+
+    @staticmethod
+    def _collect_metric_results(
+        executor: Executor,
+        items: list[tuple[str, str]],
+        results: dict[str, tuple[dict | None, str | None, str | None]],
+        pbar,
+    ) -> None:
+        future_map = {executor.submit(evaluate_search_item, item): item[0] for item in items}
+        for future in as_completed(future_map):
+            factor_name = future_map[future]
+            try:
+                name, metrics, error, error_traceback = future.result()
+                results[name] = (metrics, error, error_traceback)
+            except Exception:
+                results[factor_name] = (None, "Worker failed", traceback.format_exc())
+            if pbar is not None:
+                pbar.update(1)
 
     @staticmethod
     def _failed_metrics(factor_name: str, factor_expr: str, exc: Exception) -> dict:

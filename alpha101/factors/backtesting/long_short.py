@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from alpha101.data.panel import sample_indices_after_agg
-from alpha101.factors.backtesting.arrays import (
+from alpha101.factors.backtesting.simulation import (
     aggregate_factor,
     compute_daily_arrays,
     forward_compound_returns,
