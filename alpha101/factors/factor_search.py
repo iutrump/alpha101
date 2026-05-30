@@ -15,7 +15,7 @@ from tqdm import tqdm
 from alpha101.config import get_config
 from alpha101.data.panel import build_wide_df
 from alpha101.factors.alpha_data import Alphas
-from alpha101.factors.factor_generator import FactorGenerator
+from alpha101.factors.generation import FactorGenerator
 from alpha101.factors.expression_engine import FastExpressionEngine
 from alpha101.factors.evaluation import score_factor_cross_section
 
