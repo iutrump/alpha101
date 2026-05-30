@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from alpha101.data.panel import nan_rowwise_corr, sample_indices_after_agg
+from alpha101.factors.metrics import information_ratio, max_drawdown_array, safe_float, sharpe_ratio, win_rate
 
 
 SINGLE_SIDE_FEE = 0.0005
@@ -209,15 +210,12 @@ def _compute_metrics(
     daily_pnl = daily["daily_pnl"]
     daily_pnl_net = daily["daily_pnl_net"]
     cum_pnl = np.cumprod(1.0 + daily_pnl)
-    running_max = np.maximum.accumulate(cum_pnl)
-    max_drawdown = float(np.min((cum_pnl - running_max) / np.maximum(running_max, 1e-8)))
+    max_drawdown = max_drawdown_array(cum_pnl)
 
     returns_mean = float(np.mean(daily_pnl))
-    returns_std = float(np.std(daily_pnl, ddof=1))
-    sharpe = (returns_mean / returns_std) * np.sqrt(len(daily_pnl)) if returns_std > 0 else 0.0
+    sharpe = sharpe_ratio(daily_pnl, scale=np.sqrt(len(daily_pnl)))
     returns_mean_net = float(np.mean(daily_pnl_net))
-    returns_std_net = float(np.std(daily_pnl_net, ddof=1))
-    sharpe_net = (returns_mean_net / returns_std_net) * np.sqrt(len(daily_pnl_net)) if returns_std_net > 0 else 0.0
+    sharpe_net = sharpe_ratio(daily_pnl_net, scale=np.sqrt(len(daily_pnl_net)))
     total_ret = float(np.prod(1.0 + daily_pnl) - 1.0)
     total_ret_net = float(np.prod(1.0 + daily_pnl_net) - 1.0)
     n_years = len(daily_pnl) * pd.to_timedelta(config.freq).total_seconds() * config.k_bars / (365.25 * 24 * 3600)
@@ -226,12 +224,9 @@ def _compute_metrics(
     funding_annual = float(np.sum(daily["funding_cost_daily"]) / max(n_years, 0.01))
     cagr = float((1 + total_ret) ** (1.0 / max(n_years, 0.01)) - 1)
     cagr_net = float((1 + total_ret_net) ** (1.0 / max(n_years, 0.01)) - 1)
-    win_rate = float(np.sum(daily_pnl > 0) / len(daily_pnl))
 
     ic_series = nan_rowwise_corr(factor_eval_raw, target_eval_raw)
-    ic_mean = float(np.nanmean(ic_series)) if ic_series.size > 0 else 0.0
-    ic_std = float(np.nanstd(ic_series, ddof=1)) if np.isfinite(ic_series).sum() > 1 else 0.0
-    ic_ir = ic_mean / (ic_std + 1e-8)
+    ic_mean, ic_std, ic_ir = information_ratio(ic_series)
 
     return {
         "sharpe": float(sharpe),
@@ -241,15 +236,15 @@ def _compute_metrics(
         "returns": float(returns_annual),
         "returns_after_cost": float(returns_annual_net),
         "turnover": float(daily["turnover"]),
-        "win_rate": float(win_rate),
+        "win_rate": float(win_rate(daily_pnl)),
         "drawdown": float(max_drawdown),
         "ic_mean": float(ic_mean),
         "ic_std": float(ic_std),
         "ic_ir": float(ic_ir),
         "obs_count": int(len(daily_pnl)),
         "symbols": int(n_symbols),
-        "margin": float(returns_mean * 1000.0),
-        "margin_after_cost": float(returns_mean_net * 1000.0),
+        "margin": float(safe_float(returns_mean) * 1000.0),
+        "margin_after_cost": float(safe_float(returns_mean_net) * 1000.0),
         "single_side_fee": float(SINGLE_SIDE_FEE),
         "round_trip_fee": float(ROUND_TRIP_FEE),
         "avg_long_funding": float(daily["avg_long_funding"]),

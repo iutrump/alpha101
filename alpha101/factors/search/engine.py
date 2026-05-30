@@ -8,9 +8,9 @@ from typing import Dict
 import pandas as pd
 
 from alpha101.factors.alpha_data import Alphas
-from alpha101.factors.evaluation import score_factor_cross_section
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.generation import FactorGenerator
+from alpha101.factors.scoring import score_factor_cross_section
 from alpha101.factors.search.results import SearchResultStore
 from alpha101.factors.search.strategies import genetic_search
 
