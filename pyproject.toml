@@ -39,6 +39,9 @@ freqtrade = [
 dev = [
     "pytest>=8",
 ]
+polars = [
+    "polars>=1.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/yydhYYDH/alpha101"

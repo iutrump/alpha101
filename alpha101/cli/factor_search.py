@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--n-quantiles", type=int, default=5)
     parser.add_argument("--forward-periods", type=int, default=1)
     parser.add_argument("--backend", type=str, default="auto", choices=["auto", "process", "serial"])
+    parser.add_argument("--expression-backend", type=str, default="pandas", choices=["pandas", "polars"])
     parser.add_argument("--n-jobs", type=int, default=None, help="Parallel workers for batch expression evaluation.")
     parser.add_argument("--profile", action="store_true", help="Print per-generation timing breakdown.")
     args = parser.parse_args()
@@ -37,6 +38,7 @@ def main() -> None:
         timeframe=cfg.timeframe,
         n_quantiles=args.n_quantiles,
         forward_periods=args.forward_periods,
+        expression_backend=args.expression_backend,
     )
 
     search_engine.genetic_search(

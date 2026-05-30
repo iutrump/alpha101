@@ -82,6 +82,12 @@ python -m pip install freqtrade
 python -m pip install -e ".[dev,visual]"
 ```
 
+如果要使用 Polars 表达式后端：
+
+```bash
+python -m pip install -e ".[polars]"
+```
+
 ## 配置
 
 先复制示例配置，避免直接修改模板文件：
@@ -190,7 +196,8 @@ alpha101-factor-search \
   --strategy genetic \
   --population 30 \
   --generations 5 \
-  --n-jobs 8
+  --n-jobs 8 \
+  --expression-backend pandas
 ```
 
 搜索结果默认写入：
@@ -210,6 +217,11 @@ factor_search_results/<timeframe>/
 `--n-jobs` 控制批量表达式计算和评分的进程数。搜索路径使用专门的 worker：worker 内部完成表达式计算、因子预处理和评分，只把 metrics 返回主进程，避免把完整因子矩阵在进程之间传来传去。表达式数量较多、rolling/corr/rank 较重时通常会更快；如果表达式很少或机器内存紧张，可以改小，或者使用 `--backend serial` 串行执行。
 
 默认 `--backend auto`：Linux/WSL 下会优先使用多进程；Windows 原生环境下会默认退回串行执行，因为 Windows 的 `spawn` 多进程启动和大对象复制成本较高。确实要在 Windows 上强制多进程时，可以显式传 `--backend process`，但建议先从较小的 `--n-jobs 2` 或 `--n-jobs 4` 开始。
+
+`--expression-backend` 控制表达式计算后端：
+
+- `pandas`：默认后端，语义最稳定
+- `polars`：实验后端，使用 `operator_lib/polars/` 的算子注册表，适合对比 genetic search 的 evaluate 阶段耗时
 
 ## 回测
 

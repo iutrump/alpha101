@@ -1,11 +1,13 @@
-from alpha101.factors.operator_lib import specs
+from alpha101.factors.operator_lib.polars.registry import (
+    OPERATOR_MODULES,
+    OPERATOR_REGISTRY,
+    OPERATOR_SPECS,
+    OperatorSpec,
+    operator_names_by_category,
+    operator_params_by_category,
+)
 
-OPERATOR_MODULES = ()
-OPERATOR_REGISTRY = {}
-OPERATOR_SPECS = specs.OPERATOR_SPECS
-OperatorSpec = specs.OperatorSpec
-operator_names_by_category = specs.operator_names_by_category
-operator_params_by_category = specs.operator_params_by_category
+globals().update(OPERATOR_REGISTRY)
 
 __all__ = [
     "OPERATOR_MODULES",
@@ -14,4 +16,5 @@ __all__ = [
     "OperatorSpec",
     "operator_names_by_category",
     "operator_params_by_category",
+    *sorted(OPERATOR_REGISTRY),
 ]

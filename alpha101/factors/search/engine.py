@@ -32,7 +32,14 @@ class FactorSearchEngine:
         timeframe: str = "1d",
         n_quantiles: int = 5,
         forward_periods: int = 1,
+        expression_backend: str = "pandas",
     ):
+        if expression_backend not in {"pandas", "polars"}:
+            raise ValueError("expression_backend must be either 'pandas' or 'polars'")
+        if expression_backend == "polars":
+            from alpha101.factors.operator_lib.polars.utils import require_polars
+
+            require_polars()
         self.wide_data = wide_data
         self.alpha_obj = Alphas(wide_data)
         self.engine = FastExpressionEngine(self.alpha_obj)
@@ -40,6 +47,7 @@ class FactorSearchEngine:
         self.results = SearchResultStore(output_dir, timeframe)
         self.n_quantiles = n_quantiles
         self.forward_periods = forward_periods
+        self.expression_backend = expression_backend
         self.evaluation_cache: dict[str, dict] = {}
         self.seen_expressions: set[str] = set()
         self.max_complexity = 36.0
@@ -186,7 +194,7 @@ class FactorSearchEngine:
         items = list(named_expressions.items())
 
         if backend == "serial" or len(items) <= 1:
-            init_search_worker(fields, close, self.n_quantiles, self.forward_periods, self.min_obs)
+            init_search_worker(fields, close, self.n_quantiles, self.forward_periods, self.min_obs, self.expression_backend)
             iterator = tqdm(items, desc="Evaluating factors") if progress_bar else items
             return {
                 name: (metrics, error, error_traceback)
@@ -204,7 +212,7 @@ class FactorSearchEngine:
             with ProcessPoolExecutor(
                 max_workers=max_workers,
                 initializer=init_search_worker,
-                initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs),
+                initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs, self.expression_backend),
             ) as executor:
                 self._collect_metric_results(executor, items, results, pbar)
         if pbar is not None:
@@ -285,7 +293,7 @@ class FactorSearchEngine:
         self._metrics_executor = ProcessPoolExecutor(
             max_workers=max(1, int(worker_count)),
             initializer=init_search_worker,
-            initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs),
+            initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs, self.expression_backend),
         )
         try:
             yield
