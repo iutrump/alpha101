@@ -25,7 +25,7 @@ alpha101-expression "ts_rank(close, 10)"
 ## Research Server
 
 ```bash
-python -m alpha101.research.server
+alpha101-research-server
 ```
 
 Open `http://127.0.0.1:8001`.

@@ -158,7 +158,7 @@ alpha101-factor-search \
 The research server is kept as a lightweight factor inspection tool:
 
 ```bash
-python -m alpha101.research.server
+alpha101-research-server
 ```
 
 Then open:

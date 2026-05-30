@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from alpha101.factors.runtime import build_eval_env, normalize_expression_code
+from alpha101.factors.expression.runtime import build_eval_env, normalize_expression_code
 
 
 _FAST_WORKER_ENV_BASE = None

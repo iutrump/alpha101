@@ -7,7 +7,7 @@ from typing import Dict
 import pandas as pd
 from tqdm import tqdm
 
-from alpha101.factors.runtime import alpha_fields
+from alpha101.factors.expression.runtime import alpha_fields
 from alpha101.factors.expression.worker import (
     eval_one_worker,
     init_worker,

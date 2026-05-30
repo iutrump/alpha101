@@ -5,7 +5,7 @@ from typing import Dict
 import pandas as pd
 
 from alpha101.factors.expression.batch import evaluate_batch
-from alpha101.factors.runtime import alpha_fields, build_eval_env, evaluate_expression
+from alpha101.factors.expression.runtime import alpha_fields, build_eval_env, evaluate_expression
 
 
 class FastExpressionEngine:
