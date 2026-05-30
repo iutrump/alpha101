@@ -19,7 +19,7 @@ Results are written to `factor_search_results/<timeframe>/`.
 ## Evaluate One Expression
 
 ```bash
-python -m alpha101.factors.expression_engine "ts_rank(close, 10)"
+alpha101-expression "ts_rank(close, 10)"
 ```
 
 ## Research Server
