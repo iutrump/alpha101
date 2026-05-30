@@ -8,31 +8,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from alpha101.config import get_config
-from alpha101.data import build_wide_df
-from alpha101.factors.operators import Alphas, process_factor_wide_format
+from alpha101.data.panel import build_wide_df
+from alpha101.factors.operators import Alphas
 from alpha101.factors.factor_generator import FactorGenerator, FactorLibrary
 from alpha101.factors.expression_engine import FastExpressionEngine
-
-
-def _safe_float(value, default: float = 0.0) -> float:
-    try:
-        value = float(value)
-        return value if np.isfinite(value) else default
-    except Exception:
-        return default
-
-
-def _max_drawdown(equity: pd.Series) -> float:
-    if equity.empty:
-        return 0.0
-    running_max = equity.cummax().replace(0, np.nan)
-    dd = equity.div(running_max).sub(1.0)
-    return _safe_float(dd.min())
+from alpha101.factors.evaluation import score_factor_cross_section
 
 
 class FactorSearchEngine:
@@ -97,51 +81,13 @@ class FactorSearchEngine:
         self.seen_expressions.add(expr)
         return expr
 
-    def _target_returns(self, columns: pd.Index) -> pd.DataFrame:
-        close = self.wide_data["close"].reindex(columns=columns)
-        return close.pct_change(self.forward_periods, fill_method=None).shift(-self.forward_periods)
-
     def _score_factor(self, factor_df: pd.DataFrame) -> dict:
-        factor_df = process_factor_wide_format(factor_df)
-        target = self._target_returns(factor_df.columns)
-
-        ic_by_date = factor_df.corrwith(target, axis=1).replace([np.inf, -np.inf], np.nan)
-        ic_mean = _safe_float(ic_by_date.mean())
-        ic_std = _safe_float(ic_by_date.std(ddof=1))
-        ic_ir = ic_mean / (ic_std + 1e-8)
-
-        long_short = []
-        valid_dates = 0
-        for date in factor_df.index.intersection(target.index):
-            row = pd.DataFrame({"factor": factor_df.loc[date], "target": target.loc[date]}).dropna()
-            if len(row) < self.n_quantiles:
-                continue
-            valid_dates += 1
-            ranked = row.sort_values("factor", kind="mergesort")
-            groups = np.array_split(ranked, self.n_quantiles)
-            short_ret = groups[0]["target"].mean()
-            long_ret = groups[-1]["target"].mean()
-            long_short.append(long_ret - short_ret)
-
-        pnl = pd.Series(long_short, dtype=float)
-        equity = (1.0 + pnl.fillna(0.0)).cumprod()
-        pnl_mean = _safe_float(pnl.mean())
-        pnl_std = _safe_float(pnl.std(ddof=1))
-        sharpe = pnl_mean / (pnl_std + 1e-8) * np.sqrt(max(len(pnl), 1))
-        total_return = _safe_float(equity.iloc[-1] - 1.0) if not equity.empty else 0.0
-
-        return {
-            "fitness": float(ic_ir * 100.0 + sharpe),
-            "returns": float(total_return),
-            "sharpe_ratio": float(sharpe),
-            "ic_ir": float(ic_ir),
-            "ic_mean": float(ic_mean),
-            "ic_std": float(ic_std),
-            "drawdown": float(_max_drawdown(equity)),
-            "win_rate": float((pnl > 0).mean()) if len(pnl) else 0.0,
-            "obs_count": int(valid_dates),
-            "nan_ratio": float(factor_df.isna().sum().sum() / max(factor_df.size, 1)),
-        }
+        return score_factor_cross_section(
+            factor_df,
+            self.wide_data["close"],
+            n_quantiles=self.n_quantiles,
+            forward_periods=self.forward_periods,
+        )
 
     def evaluate_factor(self, factor_name: str, factor_expr: str) -> Dict:
         try:

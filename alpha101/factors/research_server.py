@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from alpha101.config import get_config
-from alpha101.data import build_wide_df, nan_rowwise_corr, sample_indices_after_agg
+from alpha101.data.panel import build_wide_df, nan_rowwise_corr, sample_indices_after_agg
 from alpha101.factors.operators import Alphas, process_factor_wide_format
 from alpha101.factors.expression_engine import FastExpressionEngine
 

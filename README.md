@@ -13,9 +13,13 @@ keeps the factor mining code independent from the trading framework.
 ```text
 alpha101/
   config.py                  # JSON/env config loader
-  data.py                    # Freqtrade feather data loader
-  data_helper/               # Data download and market-cap helper scripts
+  data/
+    panel.py                 # Freqtrade feather data loader
+    universe.py              # Binance USDT perpetual universe discovery
+    market_metadata.py       # Market cap and circulating supply metadata
   factors/                   # Alpha operators, expression engine, factor search, research server
+  integrations/
+    freqtrade.py             # Freqtrade download-data wrapper
 configs/
   alpha101.example.json      # Project config example
   freqtrade.example.json     # Freqtrade config example
@@ -82,7 +86,7 @@ You can also skip the submodule and use a system-installed Freqtrade CLI:
 
 ```bash
 pip install freqtrade
-python -m alpha101.data_helper.download --freqtrade-bin freqtrade
+python -m alpha101.integrations.freqtrade --freqtrade-bin freqtrade
 ```
 
 ## Configuration
@@ -103,7 +107,7 @@ export ALPHA101_CONFIG=configs/alpha101.local.json
 ## Download Data
 
 ```bash
-python -m alpha101.data_helper.download \
+python -m alpha101.integrations.freqtrade \
   --freqtrade-bin freqtrade \
   --config configs/freqtrade.local.json \
   --timeframes 1h 4h 1d \
@@ -123,11 +127,19 @@ BTC_USDT_USDT-4h-futures.feather
 ETH_USDT_USDT-4h-futures.feather
 ```
 
-`alpha101.data_helper.market_cap` is kept for research features that need
+`alpha101.data.market_metadata` is kept for research features that need
 `market_cap_usd` or `circulating_supply`. Freqtrade has `MarketCapPairList`, but
 that plugin is for pairlist ranking/filtering by CoinGecko market-cap rank; it
 does not write market-cap or circulating-supply columns into the local factor
 research panel.
+
+To discover a Binance USDT perpetual universe:
+
+```bash
+python -m alpha101.data.universe \
+  --top-n 50 \
+  --output configs/pairs.binance-usdt-perp.json
+```
 
 ## Factor Search
 

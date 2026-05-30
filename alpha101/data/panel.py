@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from alpha101.data_helper.market_cap import get_pair_market_caps
+from alpha101.data.market_metadata import get_pair_market_caps
 
 
 TIMEFRAME_SECONDS = {
@@ -146,6 +146,7 @@ def build_wide_df(
     test_start_date=None,
     test_end_date=None,
     buffer: int = 365,
+    include_market_cap: bool = True,
 ) -> pd.DataFrame:
     window_start, window_end = compute_window(
         timeframe,
@@ -155,10 +156,12 @@ def build_wide_df(
         test_end_date,
         buffer=buffer,
     )
-    market_caps = get_pair_market_caps(pairs)
-    supply_dict = market_caps[["pair", "circulating_supply"]].set_index("pair")[
-        "circulating_supply"
-    ].to_dict()
+    supply_dict = None
+    if include_market_cap:
+        market_caps = get_pair_market_caps(pairs)
+        supply_dict = market_caps[["pair", "circulating_supply"]].set_index("pair")[
+            "circulating_supply"
+        ].to_dict()
 
     frames = []
     for pair in tqdm(pairs, desc="Loading pairs", total=len(pairs)):

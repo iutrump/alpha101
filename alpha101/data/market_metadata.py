@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import argparse
 import json
 import warnings
@@ -10,8 +9,6 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 import requests
-import sys
-import subprocess
 
 COINPAPRIKA_TICKERS_URL = "https://api.coinpaprika.com/v1/tickers"
 
@@ -118,24 +115,6 @@ def get_pair_market_caps(pairs, provider: str = "coinpaprika", http_proxy: str =
         )
         return _load_cache_json(cache_json_path)
 
-def get_pair_market_caps_last_and_update(pairs, provider: str = "coinpaprika", cache_dir: str = "",http_proxy: str = None, https_proxy: str = None) -> pd.DataFrame:
-    '''
-    Too long to fetch, 
-    so we can call history get_pair_market_caps, 
-    then call this function to update the cache with new fetch in background for next time.
-    '''
-    cache_json_path = _default_cache_json_path(cache_dir, provider=provider)
-    if not cache_json_path.exists():
-        get_pair_market_caps(pairs, provider=provider, http_proxy=http_proxy, https_proxy=https_proxy)
-    else:
-        print('Running')
-        subprocess.Popen(
-            [sys.executable, __file__, "--provider", provider],
-            # stdout=subprocess.DEVNULL,
-            # stderr=subprocess.DEVNULL,
-        )
-        return _load_cache_json(cache_json_path)
-
 def _default_cache_json_path(
     cache_dir: str = "",
     provider: str = "auto",
@@ -144,7 +123,6 @@ def _default_cache_json_path(
         cache_dir = Path('cache_cap_data')
     else:
         cache_dir = Path(cache_dir)
-    print('cache dir', cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / f"pair_market_caps_cache_latest_{provider}.json"
 

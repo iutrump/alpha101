@@ -327,7 +327,7 @@ def parse_args():
 
 if __name__ == "__main__":
     from alpha101.config import get_config
-    from alpha101.data import build_wide_df
+    from alpha101.data.panel import build_wide_df
     from alpha101.factors.operators import Alphas
     cfg = get_config()
     print(f'test start from {cfg.test_start_date} {cfg.test_end_date}')
