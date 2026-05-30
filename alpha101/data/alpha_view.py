@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+
 class Alphas(object):
     def __init__(self, wide_data):
         """
@@ -26,32 +27,41 @@ class Alphas(object):
     @property
     def open(self):
         return self._open
+
     @property
     def high(self):
         return self._high
+
     @property
     def low(self):
         return self._low
+
     @property
     def close(self):
         return self._close
+
     @property
     def volume(self):
         return self._volume
+
     @property
     def returns(self):
         return self._returns
+
     @property
     def vwap(self):
         return self._vwap
+
     @property
     def market_return(self):
         if self._market_return is None:
             self._market_return = self._build_market_return()
         return self._market_return
+
     @property
     def cap(self):
         return self._cap
+
     @property
     def funding(self):
         return self._funding

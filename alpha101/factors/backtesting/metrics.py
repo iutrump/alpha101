@@ -7,7 +7,13 @@ import pandas as pd
 
 from alpha101.data.panel import nan_rowwise_corr
 from alpha101.factors.backtesting.config import ROUND_TRIP_FEE, SINGLE_SIDE_FEE, LongShortBacktestConfig
-from alpha101.factors.metrics import information_ratio, max_drawdown_array, safe_float, sharpe_ratio, win_rate
+from alpha101.factors.evaluation.metrics import (
+    information_ratio,
+    max_drawdown_array,
+    safe_float,
+    sharpe_ratio,
+    win_rate,
+)
 
 
 def compute_metrics(

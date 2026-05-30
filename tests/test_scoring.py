@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from alpha101.factors.scoring import score_factor_cross_section
+from alpha101.factors.evaluation import score_factor_cross_section
 
 
 def test_score_factor_cross_section_returns_expected_keys():
