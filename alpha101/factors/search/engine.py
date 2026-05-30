@@ -12,7 +12,7 @@ from typing import Dict
 import pandas as pd
 from tqdm import tqdm
 
-from alpha101.data.alpha_view import Alphas
+from alpha101.data import FactorDataView, PolarsLongDataView
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.expression.runtime import alpha_fields
 from alpha101.factors.generation import FactorGenerator
@@ -41,7 +41,7 @@ class FactorSearchEngine:
 
             require_polars()
         self.wide_data = wide_data
-        self.alpha_obj = Alphas(wide_data)
+        self.alpha_obj = FactorDataView(wide_data)
         self.engine = FastExpressionEngine(self.alpha_obj)
         self.generator = FactorGenerator()
         self.results = SearchResultStore(output_dir, timeframe)
@@ -81,9 +81,13 @@ class FactorSearchEngine:
                 return self._clone_metrics(cached, factor_name, factor_expr)
 
             self._validate_expression(factor_expr)
-            result = self.engine.evaluate(factor_expr)
-            if result is None or result.isnull().all().all():
+            result = self._evaluate_expression(factor_expr)
+            if result is None or self._result_is_all_nan(result):
                 raise ValueError("All NaN result")
+            if self.expression_backend == "polars":
+                from alpha101.factors.expression.polars_runtime import polars_result_to_pandas
+
+                result = polars_result_to_pandas(result)
             result.index.name = "date"
             result.columns.name = "symbol"
 
@@ -189,7 +193,7 @@ class FactorSearchEngine:
         max_workers: int | None,
         progress_bar: bool,
     ) -> dict[str, tuple[dict | None, str | None, str | None]]:
-        fields = alpha_fields(self.alpha_obj)
+        fields = self._expression_fields()
         close = self.wide_data["close"]
         items = list(named_expressions.items())
 
@@ -263,6 +267,25 @@ class FactorSearchEngine:
             preprocess=preprocess,
         )
 
+    def _evaluate_expression(self, factor_expr: str):
+        if self.expression_backend == "polars":
+            from alpha101.factors.expression.polars_runtime import alpha_polars_fields, evaluate_polars_expression
+
+            return evaluate_polars_expression(factor_expr, alpha_polars_fields(PolarsLongDataView(self.wide_data)))
+        return self.engine.evaluate(factor_expr)
+
+    def _expression_fields(self) -> dict:
+        if self.expression_backend == "polars":
+            return alpha_fields(self.alpha_obj)
+        return alpha_fields(self.alpha_obj)
+
+    def _result_is_all_nan(self, result) -> bool:
+        if self.expression_backend == "polars":
+            from alpha101.factors.expression.polars_runtime import polars_result_is_all_nan
+
+            return polars_result_is_all_nan(result)
+        return result.isnull().all().all()
+
     @staticmethod
     def _clone_metrics(metrics: dict, factor_name: str, expression: str) -> dict:
         out = dict(metrics)
@@ -287,7 +310,7 @@ class FactorSearchEngine:
             yield
             return
 
-        fields = alpha_fields(self.alpha_obj)
+        fields = self._expression_fields()
         close = self.wide_data["close"]
         worker_count = max_workers if max_workers is not None else _cpu_count()
         self._metrics_executor = ProcessPoolExecutor(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 __all__ = [
     "ts_sum",
@@ -99,7 +100,18 @@ def correlation(x: pd.DataFrame, y: pd.DataFrame, window=10):
     :param window: the rolling window.
     :return: a pandas DataFrame with the time-series min over the past 'window' days.
     """
-    return x.rolling(window).corr(y)
+    sum_x = x.rolling(window, min_periods=window).sum()
+    sum_y = y.rolling(window, min_periods=window).sum()
+    sum_xy = (x * y).rolling(window, min_periods=window).sum()
+    sum_x2 = (x * x).rolling(window, min_periods=window).sum()
+    sum_y2 = (y * y).rolling(window, min_periods=window).sum()
+
+    cov_xy = sum_xy - (sum_x * sum_y) / window
+    var_x = sum_x2 - (sum_x * sum_x) / window
+    var_y = sum_y2 - (sum_y * sum_y) / window
+    denom = np.sqrt(var_x * var_y)
+    corr = cov_xy / denom
+    return corr.where((var_x > 0) & (var_y > 0))
 
 def ts_pctchange(df: pd.DataFrame, period=1):
     """
@@ -117,13 +129,10 @@ def ts_covariance(x, y, window=10):
     :param window: the rolling window.
     :return: a pandas DataFrame with the time-series min over the past 'window' days.
     """
-    xy = x * y
-
-    mean_x = x.rolling(window).mean()
-    mean_y = y.rolling(window).mean()
-    mean_xy = xy.rolling(window).mean()
-    cov = mean_xy - mean_x * mean_y
-    return cov
+    sum_x = x.rolling(window, min_periods=window).sum()
+    sum_y = y.rolling(window, min_periods=window).sum()
+    sum_xy = (x * y).rolling(window, min_periods=window).sum()
+    return sum_xy / window - (sum_x / window) * (sum_y / window)
 
 def ts_rank(df, window=10):
     """
@@ -174,49 +183,13 @@ def ts_product(df: pd.DataFrame, window: int = 10) -> pd.DataFrame:
     if window <= 0:
         raise ValueError("window must be a positive integer")
 
-    x = df.astype(np.float64)
-
-    # 有效值计数：模仿 rolling(window) 默认 min_periods=window 的行为
-    valid_count = x.notna().rolling(window, min_periods=window).sum()
-
-    # 0 的位置
-    is_zero = x.eq(0)
-    zero_count = is_zero.rolling(window, min_periods=window).sum()
-
-    # 负数个数决定符号
-    neg_count = x.lt(0).rolling(window, min_periods=window).sum()
-    sign = pd.DataFrame(
-        np.where((neg_count % 2) == 0, 1.0, -1.0),
-        index=x.index,
-        columns=x.columns,
-    )
-
-    # 对 abs(x) 取 log；0 和 NaN 不参与 log 求和
-    abs_x = x.abs()
-    log_abs = pd.DataFrame(
-        np.where((abs_x > 0) & abs_x.notna(), np.log(abs_x), 0.0),
-        index=x.index,
-        columns=x.columns,
-    )
-    log_sum = log_abs.rolling(window, min_periods=window).sum()
-
-    # 防止 exp 溢出/下溢
-    finfo = np.finfo(np.float64)
-    max_log = np.log(finfo.max)          # ~709.78
-    min_log = np.log(finfo.tiny)         # ~-708.40
-
-    clipped_log_sum = log_sum.clip(lower=min_log, upper=max_log)
-    mag = np.exp(clipped_log_sum)
-
-    out = sign * mag
-
-    # 窗口里有 0 -> 结果直接为 0
-    out = out.mask(zero_count > 0, 0.0)
-
-    # 窗口内有效值不足 window -> NaN
-    out = out.mask(valid_count < window)
-
-    return out
+    arr = df.to_numpy(dtype=np.float64, copy=False)
+    out = np.full(arr.shape, np.nan, dtype=np.float64)
+    if arr.shape[0] >= window:
+        windows = sliding_window_view(arr, window_shape=window, axis=0)
+        with np.errstate(over="ignore", invalid="ignore"):
+            out[window - 1:] = np.prod(windows, axis=2)
+    return pd.DataFrame(out, index=df.index, columns=df.columns)
 
 def ts_min(df, window=10):
     """
@@ -483,24 +456,15 @@ def ts_slope(x: pd.DataFrame, window: int = 7) -> pd.DataFrame:
     if window < 2:
         raise ValueError("window must be >= 2")
 
-    # 时间变量: 0, 1, 2, ..., window-1
     t = np.arange(window, dtype=float)
-
-    # 去均值后用于计算 slope
-    t_mean = t.mean()
-    t_demean = t - t_mean
-    denominator = np.sum(t_demean ** 2)
-
-    def _slope(y: np.ndarray) -> float:
-        if np.isnan(y).any():
-            return np.nan
-
-        y_mean = y.mean()
-        y_demean = y - y_mean
-
-        return np.sum(t_demean * y_demean) / denominator
-
-    return x.rolling(window=window).apply(_slope, raw=True)
+    t_demean = t - t.mean()
+    denominator = float(np.sum(t_demean ** 2))
+    weighted_sum = sum(
+        x.shift(lag) * t_demean[window - lag - 1]
+        for lag in range(window)
+    )
+    valid_count = x.notna().rolling(window=window).sum()
+    return (weighted_sum / denominator).where(valid_count == window)
 
 
 ts_mean = sma

@@ -24,38 +24,35 @@ def make_ts_regression(rettype: int) -> Callable[[pd.DataFrame, pd.DataFrame, in
             y = y.shift(lag)
             x = x.shift(lag)
 
-        # 预计算
         sum_x = x.rolling(d, min_periods=d).sum()
         sum_y = y.rolling(d, min_periods=d).sum()
         sum_xy = (x * y).rolling(d, min_periods=d).sum()
         sum_x2 = (x * x).rolling(d, min_periods=d).sum()
 
-        mean_x = sum_x / d
-        mean_y = sum_y / d
-
-        cov_xy = sum_xy - d * mean_x * mean_y
-        var_x = sum_x2 - d * mean_x * mean_x
+        cov_xy = sum_xy - (sum_x * sum_y) / d
+        var_x = sum_x2 - (sum_x * sum_x) / d
 
         beta = cov_xy / var_x
         beta[var_x == 0] = np.nan
 
-        alpha = mean_y - beta * mean_x
-
         if rettype == 0:
             return beta
-        elif rettype == 1:
-            return alpha
-        elif rettype == 3:
-            # R²
-            y_pred = alpha + beta * x
-            ss_res = ((y - y_pred) ** 2).rolling(d, min_periods=d).sum()
-            ss_tot = ((y - mean_y) ** 2).rolling(d, min_periods=d).sum()
 
-            r2 = 1 - ss_res / ss_tot
-            r2[ss_tot == 0] = np.nan
+        mean_x = sum_x / d
+        mean_y = sum_y / d
+        alpha = mean_y - beta * mean_x
+
+        if rettype == 1:
+            return alpha
+        if rettype == 2:
+            return y - (alpha + beta * x)
+        if rettype == 3:
+            sum_y2 = (y * y).rolling(d, min_periods=d).sum()
+            var_y = sum_y2 - (sum_y * sum_y) / d
+            r2 = (cov_xy * cov_xy) / (var_x * var_y)
+            r2[(var_x <= 0) | (var_y <= 0)] = np.nan
             return r2
-        else:
-            return beta
+        return y - (alpha + beta * x)
 
     return ts_regression
 

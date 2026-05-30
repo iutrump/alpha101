@@ -5,8 +5,7 @@ import argparse
 import pandas as pd
 
 from alpha101.config import get_config
-from alpha101.data.panel import build_wide_df
-from alpha101.data.alpha_view import Alphas
+from alpha101.data import FactorDataView, build_research_wide_frame
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.operator_lib import process_factor_wide_format
 
@@ -21,7 +20,7 @@ def parse_args():
 def main() -> None:
     cfg = get_config()
     print(f"test start from {cfg.test_start_date} {cfg.test_end_date}")
-    wide_data = build_wide_df(
+    wide_data = build_research_wide_frame(
         cfg.pairs,
         cfg.lookback_days,
         cfg.data_root,
@@ -30,7 +29,7 @@ def main() -> None:
         test_end_date=cfg.test_end_date,
         buffer=cfg.pre_buffer_candles,
     )
-    engine = FastExpressionEngine(Alphas(wide_data))
+    engine = FastExpressionEngine(FactorDataView(wide_data))
     args = parse_args()
     if args.file:
         with open(args.file, "r", encoding="utf-8") as f:

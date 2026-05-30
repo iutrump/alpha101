@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from alpha101.data.panel import nan_rowwise_corr
+from alpha101.data import nan_rowwise_corr
 from alpha101.factors.backtesting.config import ROUND_TRIP_FEE, SINGLE_SIDE_FEE, LongShortBacktestConfig
 from alpha101.factors.evaluation.metrics import (
     information_ratio,

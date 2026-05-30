@@ -2,23 +2,25 @@ from __future__ import annotations
 
 import numpy as np
 
+from alpha101.data.views import LazyPolarsFactor, PolarsFactor
 from alpha101.factors.expression.runtime import normalize_expression_code
 from alpha101.factors.operator_lib.polars import OPERATOR_REGISTRY
-from alpha101.factors.operator_lib.polars.utils import from_numpy_like, require_polars, to_numpy
+from alpha101.factors.operator_lib.polars.utils import require_polars, to_numpy, to_pandas
 
 
 def alpha_polars_fields(alpha_instance) -> dict:
+    close = _to_polars(alpha_instance.close)
     return {
-        "open": _to_polars(alpha_instance.open),
-        "high": _to_polars(alpha_instance.high),
-        "low": _to_polars(alpha_instance.low),
-        "close": _to_polars(alpha_instance.close),
-        "volume": _to_polars(alpha_instance.volume),
-        "returns": _to_polars(alpha_instance.returns),
-        "vwap": _to_polars(alpha_instance.vwap),
-        "market_return": _to_polars(alpha_instance.market_return),
-        "funding": _to_polars(alpha_instance.funding),
-        "cap": _to_polars(alpha_instance.cap),
+        "open": _to_polars(alpha_instance.open, template=close),
+        "high": _to_polars(alpha_instance.high, template=close),
+        "low": _to_polars(alpha_instance.low, template=close),
+        "close": close,
+        "volume": _to_polars(alpha_instance.volume, template=close),
+        "returns": _to_polars(alpha_instance.returns, template=close),
+        "vwap": _to_polars(alpha_instance.vwap, template=close),
+        "market_return": _to_polars(alpha_instance.market_return, template=close),
+        "funding": _to_polars(alpha_instance.funding, template=close),
+        "cap": _to_polars(alpha_instance.cap, template=close),
     }
 
 
@@ -53,53 +55,74 @@ def evaluate_polars_expression(code: str, fields: dict):
 
 
 def polars_result_is_all_nan(result) -> bool:
-    return bool(np.isnan(to_numpy(result)).all())
+    return result.is_all_nan()
 
 
 def polars_result_to_numpy(result) -> np.ndarray:
     return to_numpy(result)
 
 
-def _to_polars(df):
+def polars_result_to_pandas(result):
+    return to_pandas(result)
+
+
+def _to_polars(value, *, template: LazyPolarsFactor | PolarsFactor | None = None):
+    if isinstance(value, LazyPolarsFactor):
+        return value
+    if isinstance(value, PolarsFactor):
+        return LazyPolarsFactor.from_factor(value)
+    return LazyPolarsFactor.from_wide(value, template=template)
+
+
+def abs_df(factor):
+    return abs(factor)
+
+
+def signed_log_df(factor):
     pl = require_polars()
-    return pl.DataFrame(df.to_numpy(dtype=float, copy=False), schema=list(df.columns), orient="row")
+    value = pl.col("value")
+    return factor.map_value(value.sign() * (value.abs() + 1.0).log())
 
 
-def abs_df(df):
-    pl = require_polars()
-    return df.select([pl.col(col).abs().alias(col) for col in df.columns])
+def sign_df(factor):
+    return factor.map_value(require_polars().col("value").sign())
 
 
-def signed_log_df(df):
-    arr = to_numpy(df)
-    return from_numpy_like(np.sign(arr) * np.log(np.abs(arr) + 1.0), df)
+def sqrt_df(factor):
+    return factor.map_value(require_polars().col("value").sqrt())
 
 
-def sign_df(df):
-    return from_numpy_like(np.sign(to_numpy(df)), df)
-
-
-def sqrt_df(df):
-    pl = require_polars()
-    return df.select([pl.col(col).sqrt().alias(col) for col in df.columns])
-
-
-def exp_df(df):
-    pl = require_polars()
-    return df.select([pl.col(col).exp().alias(col) for col in df.columns])
+def exp_df(factor):
+    return factor.map_value(require_polars().col("value").exp())
 
 
 def maximum_df(left, right):
-    if hasattr(left, "to_numpy") and hasattr(right, "to_numpy"):
-        return from_numpy_like(np.maximum(to_numpy(left), to_numpy(right)), left)
-    if hasattr(left, "to_numpy"):
-        return from_numpy_like(np.maximum(to_numpy(left), right), left)
-    return from_numpy_like(np.maximum(left, to_numpy(right)), right)
+    pl = require_polars()
+    if isinstance(left, (PolarsFactor, LazyPolarsFactor)) and isinstance(right, (PolarsFactor, LazyPolarsFactor)):
+        joined = left.frame.rename({"value": "left"}).join(
+            right.frame.rename({"value": "right"}),
+            on=["date", "symbol"],
+            how="left",
+        )
+        return left.with_frame(
+            joined.with_columns(pl.max_horizontal("left", "right").alias("value")).select(["date", "symbol", "value"])
+        )
+    if isinstance(left, (PolarsFactor, LazyPolarsFactor)):
+        return left.map_value(pl.max_horizontal(pl.col("value"), pl.lit(right)))
+    return right.map_value(pl.max_horizontal(pl.lit(left), pl.col("value")))
 
 
 def minimum_df(left, right):
-    if hasattr(left, "to_numpy") and hasattr(right, "to_numpy"):
-        return from_numpy_like(np.minimum(to_numpy(left), to_numpy(right)), left)
-    if hasattr(left, "to_numpy"):
-        return from_numpy_like(np.minimum(to_numpy(left), right), left)
-    return from_numpy_like(np.minimum(left, to_numpy(right)), right)
+    pl = require_polars()
+    if isinstance(left, (PolarsFactor, LazyPolarsFactor)) and isinstance(right, (PolarsFactor, LazyPolarsFactor)):
+        joined = left.frame.rename({"value": "left"}).join(
+            right.frame.rename({"value": "right"}),
+            on=["date", "symbol"],
+            how="left",
+        )
+        return left.with_frame(
+            joined.with_columns(pl.min_horizontal("left", "right").alias("value")).select(["date", "symbol", "value"])
+        )
+    if isinstance(left, (PolarsFactor, LazyPolarsFactor)):
+        return left.map_value(pl.min_horizontal(pl.col("value"), pl.lit(right)))
+    return right.map_value(pl.min_horizontal(pl.lit(left), pl.col("value")))

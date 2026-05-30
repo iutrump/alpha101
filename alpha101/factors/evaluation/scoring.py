@@ -89,7 +89,20 @@ def score_factor_cross_section_array(
         raise ValueError(f"factor and target shape mismatch: {factor.shape} != {target.shape}")
 
     n_dates = factor.shape[0]
-    ic_by_date = np.full(n_dates, np.nan, dtype=np.float32)
+    valid = np.isfinite(factor) & np.isfinite(target)
+    valid_counts = valid.sum(axis=1)
+    masked_factor = np.where(valid, factor, 0.0)
+    masked_target = np.where(valid, target, 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        factor_mean = masked_factor.sum(axis=1) / valid_counts
+        target_mean = masked_target.sum(axis=1) / valid_counts
+        factor_var = (masked_factor * masked_factor).sum(axis=1) / valid_counts - factor_mean * factor_mean
+        target_var = (masked_target * masked_target).sum(axis=1) / valid_counts - target_mean * target_mean
+        covariance = (masked_factor * masked_target).sum(axis=1) / valid_counts - factor_mean * target_mean
+        ic_by_date = covariance / np.sqrt(factor_var * target_var)
+    ic_by_date = ic_by_date.astype(np.float32, copy=False)
+    ic_by_date[(valid_counts < 3) | (factor_var <= 0) | (target_var <= 0)] = np.nan
+
     long_short: list[float] = []
     valid_dates = 0
     nan_ratio = float(np.isnan(factor).sum() / max(factor.size, 1))
@@ -97,15 +110,8 @@ def score_factor_cross_section_array(
     for date_idx in range(n_dates):
         factor_row = factor[date_idx]
         target_row = target[date_idx]
-        mask = np.isfinite(factor_row) & np.isfinite(target_row)
-        n_valid = int(mask.sum())
-        if n_valid >= 3:
-            x = factor_row[mask].astype(np.float64, copy=False)
-            y = target_row[mask].astype(np.float64, copy=False)
-            x_std = x.std()
-            y_std = y.std()
-            if x_std > 0 and y_std > 0:
-                ic_by_date[date_idx] = float(np.mean((x - x.mean()) * (y - y.mean())) / (x_std * y_std))
+        mask = valid[date_idx]
+        n_valid = int(valid_counts[date_idx])
 
         if n_valid < n_quantiles:
             continue

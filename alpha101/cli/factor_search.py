@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from alpha101.config import get_config
-from alpha101.data.panel import build_wide_df
+from alpha101.data import build_research_wide_frame
 from alpha101.factors.search import FactorSearchEngine
 
 
@@ -23,7 +23,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = get_config(args.config)
-    wide_data = build_wide_df(
+    wide_data = build_research_wide_frame(
         cfg.pairs,
         cfg.lookback_days,
         cfg.data_root,

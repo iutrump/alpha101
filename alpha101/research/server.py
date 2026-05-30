@@ -9,8 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from alpha101.config import get_config
-from alpha101.data.panel import build_wide_df
-from alpha101.data.alpha_view import Alphas
+from alpha101.data import FactorDataView, build_research_wide_frame
 from alpha101.factors.backtesting import LongShortBacktestConfig, backtest_long_short
 from alpha101.factors.operator_lib import process_factor_wide_format
 from alpha101.factors.expression import FastExpressionEngine
@@ -32,7 +31,7 @@ class BacktestRequest(BaseModel):
 
 def _load_context() -> dict[str, Any]:
     cfg = get_config()
-    wide_data = build_wide_df(
+    wide_data = build_research_wide_frame(
         cfg.pairs,
         cfg.lookback_days,
         cfg.data_root,
@@ -41,7 +40,7 @@ def _load_context() -> dict[str, Any]:
         test_end_date=cfg.test_end_date,
         buffer=cfg.pre_buffer_candles,
     )
-    engine = FastExpressionEngine(Alphas(wide_data))
+    engine = FastExpressionEngine(FactorDataView(wide_data))
     n_bars = int(
         cfg.pre_buffer_candles
         * pd.Timedelta("1d").total_seconds()
