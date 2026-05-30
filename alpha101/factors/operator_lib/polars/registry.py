@@ -1,4 +1,4 @@
-from alpha101.factors.operator_lib.pandas import (
+from alpha101.factors.operator_lib.polars import (
     OPERATOR_MODULES,
     OPERATOR_REGISTRY,
     OPERATOR_SPECS,
@@ -7,8 +7,6 @@ from alpha101.factors.operator_lib.pandas import (
     operator_params_by_category,
 )
 
-globals().update(OPERATOR_REGISTRY)
-
 __all__ = [
     "OPERATOR_MODULES",
     "OPERATOR_REGISTRY",
@@ -16,5 +14,4 @@ __all__ = [
     "OperatorSpec",
     "operator_names_by_category",
     "operator_params_by_category",
-    *sorted(OPERATOR_REGISTRY),
 ]

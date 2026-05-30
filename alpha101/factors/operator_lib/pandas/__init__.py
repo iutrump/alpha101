@@ -1,4 +1,4 @@
-from alpha101.factors.operator_lib.pandas import (
+from alpha101.factors.operator_lib.pandas.registry import (
     OPERATOR_MODULES,
     OPERATOR_REGISTRY,
     OPERATOR_SPECS,

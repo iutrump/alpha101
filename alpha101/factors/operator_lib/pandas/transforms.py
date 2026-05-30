@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from alpha101.factors.operator_lib.cross_section import winsorize_mad, zscore
-from alpha101.factors.operator_lib.time_series import ts_decay_linear
+from alpha101.factors.operator_lib.pandas.cross_section import winsorize_mad, zscore
+from alpha101.factors.operator_lib.pandas.time_series import ts_decay_linear
 
 __all__ = [
     "process_factor_wide_format",

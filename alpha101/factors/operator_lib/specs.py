@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from alpha101.factors.operator_lib import cross_section, regression, time_series, transforms
-
 
 @dataclass(frozen=True)
 class OperatorSpec:
@@ -12,8 +10,6 @@ class OperatorSpec:
     arity: int
     params: tuple[int, ...] = ()
 
-
-OPERATOR_MODULES = (cross_section, regression, time_series, transforms)
 
 OPERATOR_SPECS = {
     "ts_mean": OperatorSpec("ts_mean", "time_series", 1, (3, 12, 20, 30, 60)),
@@ -64,18 +60,7 @@ def operator_names_by_category(category: str) -> list[str]:
     ]
 
 
-OPERATOR_REGISTRY = {}
-for _module in OPERATOR_MODULES:
-    OPERATOR_REGISTRY.update({name: getattr(_module, name) for name in _module.__all__})
-
-missing_specs = sorted(name for name in OPERATOR_SPECS if name not in OPERATOR_REGISTRY)
-if missing_specs:
-    raise RuntimeError(f"Operator specs reference missing functions: {missing_specs}")
-
-
 __all__ = [
-    "OPERATOR_MODULES",
-    "OPERATOR_REGISTRY",
     "OPERATOR_SPECS",
     "OperatorSpec",
     "operator_names_by_category",
