@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from alpha101.factors.backtest import LongShortBacktestConfig, backtest_long_short
+from alpha101.factors.backtesting import LongShortBacktestConfig, backtest_long_short
 
 
 def test_backtest_long_short_returns_curve_and_metrics():
