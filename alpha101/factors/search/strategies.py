@@ -11,6 +11,8 @@ def genetic_search(
     n_generations: int = 10,
     mutation_rate: float = 0.3,
     crossover_rate: float = 0.5,
+    backend: str = "auto",
+    max_workers: int | None = None,
 ) -> dict | None:
     population = [
         {"expression": search_engine.new_random_expression(), "fitness": None, "metrics": None}
@@ -18,10 +20,21 @@ def genetic_search(
     ]
     best_overall = None
     for gen in range(n_generations):
-        for idx, individual in enumerate(tqdm(population, desc=f"Generation {gen + 1}")):
+        pending = {
+            f"gen{gen}_individual_{idx:04d}": individual["expression"]
+            for idx, individual in enumerate(population)
+            if individual["fitness"] is None
+        }
+        batch_metrics = search_engine.evaluate_factors_batch(
+            pending,
+            backend=backend,
+            max_workers=max_workers,
+            progress_bar=True,
+        )
+        for idx, individual in enumerate(tqdm(population, desc=f"Scoring generation {gen + 1}")):
             if individual["fitness"] is not None:
                 continue
-            metrics = search_engine.evaluate_factor(f"gen{gen}_individual_{idx:04d}", individual["expression"])
+            metrics = batch_metrics[f"gen{gen}_individual_{idx:04d}"]
             individual["metrics"] = metrics
             individual["fitness"] = metrics.get("fitness", -999.0)
 

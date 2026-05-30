@@ -16,6 +16,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--n-quantiles", type=int, default=5)
     parser.add_argument("--forward-periods", type=int, default=1)
+    parser.add_argument("--backend", type=str, default="auto", choices=["auto", "process", "serial"])
+    parser.add_argument("--n-jobs", type=int, default=None, help="Parallel workers for batch expression evaluation.")
     args = parser.parse_args()
 
     cfg = get_config(args.config)
@@ -36,7 +38,12 @@ def main() -> None:
         forward_periods=args.forward_periods,
     )
 
-    search_engine.genetic_search(population_size=args.population, n_generations=args.generations)
+    search_engine.genetic_search(
+        population_size=args.population,
+        n_generations=args.generations,
+        backend=args.backend,
+        max_workers=args.n_jobs,
+    )
     search_engine.summarize_results()
 
 
