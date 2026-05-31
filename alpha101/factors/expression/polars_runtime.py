@@ -89,7 +89,8 @@ def sign_df(factor):
 
 
 def sqrt_df(factor):
-    return factor.map_value(require_polars().col("value").sqrt())
+    pl = require_polars()
+    return factor.map_value(pl.max_horizontal(pl.col("value"), pl.lit(0.0)).sqrt())
 
 
 def exp_df(factor):

@@ -45,6 +45,15 @@ def test_expression_batch_serial_and_process_match():
     pd.testing.assert_frame_equal(serial.sort_index(axis=1), process.sort_index(axis=1))
 
 
+def test_expression_sqrt_clips_negative_values():
+    engine = FastExpressionEngine(FactorDataView(make_wide_data()))
+
+    result = engine.evaluate("sqrt(close - close - 1)")
+
+    assert float(result.to_numpy().max()) == 0.0
+    assert float(result.to_numpy().min()) == 0.0
+
+
 def test_ts_slope_matches_reference_rolling_apply():
     data = make_wide_data()["close"]
     window = 4

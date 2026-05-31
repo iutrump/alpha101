@@ -93,7 +93,7 @@ def load_pair_frame(
     if funding_path.exists():
         funding_df = pd.read_feather(funding_path).rename(columns={"open": "funding"})
         df = df.merge(funding_df[["date", "funding"]], on="date", how="left")
-        df["funding"] = df["funding"].ffill()
+        df["funding"] = df["funding"].ffill().fillna(0.0)
     else:
         df["funding"] = 0.0
 

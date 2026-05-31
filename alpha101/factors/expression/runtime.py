@@ -13,6 +13,10 @@ def signed_log(x):
     return np.sign(x) * np.log(np.abs(x) + 1)
 
 
+def safe_sqrt(x):
+    return np.sqrt(np.maximum(x, 0))
+
+
 def remove_comments(code: str) -> str:
     cleaned_lines = []
     for line in code.splitlines():
@@ -58,7 +62,7 @@ def build_eval_env(fields: Mapping[str, Any]) -> dict[str, Any]:
         "abs": np.abs,
         "log": signed_log,
         "sign": np.sign,
-        "sqrt": np.sqrt,
+        "sqrt": safe_sqrt,
         "max": np.maximum,
         "min": np.minimum,
         "exp": np.exp,

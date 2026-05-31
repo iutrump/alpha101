@@ -59,7 +59,7 @@ def backtest_long_short(
     target_forward_eval = target_forward_full[sampled_idx][:, target_indices]
     target_eval_raw = target_raw_full[sampled_idx][:, target_indices]
     factor_eval_raw = factor_raw[sampled_idx]
-    funding_eval_raw = funding_raw_full[sampled_idx]
+    funding_eval_raw = np.nan_to_num(funding_raw_full[sampled_idx], nan=0.0)
     is_funding_time = funding_time_mask(eval_dates)
 
     daily = compute_daily_arrays(
