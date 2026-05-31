@@ -16,13 +16,14 @@
 ```text
 alpha101/
   cli/                         # 命令行入口
-  data/                        # 数据加载、数据视图、币种池与市场元数据
-    alpha_view.py              # 因子表达式运行时使用的数据视图
-    panel.py                   # Freqtrade feather 数据加载与宽表构建
+  data/                        # 数据加载、数组工具、数据视图与币种池
+    loading.py                 # Freqtrade feather 数据加载与宽表构建
+    views.py                   # 因子表达式运行时使用的数据视图
+    arrays.py                  # 数组采样与相关性工具
+    market_caps.py             # 市值和流通量元数据
     universe.py                # Binance USDT 永续币种池发现
-    market_metadata.py         # 市值和流通量元数据
   factors/
-    operator_lib/              # 因子算子实现与注册表
+    operator_lib/              # pandas 因子算子实现、规格与注册表
     expression/                # 表达式执行引擎
     generation/                # 表达式 AST、语法、生成与遗传操作
     evaluation/                # 基础指标与因子评分
@@ -112,7 +113,18 @@ freqtrade create-userdir --userdir user_data
 
 上面的端口适用于本机代理监听在 `127.0.0.1:7890` 的情况；如果你的代理端口不同，改成自己的地址即可。
 
+获取市值最大的前50个 Binance USDT 永续币种池：
+
+
+```bash
+python -m alpha101.data.universe \
+  --top-n 50 \
+  --output configs/pairs.binance-usdt-perp.json
+```
+然后复制到`configs/alpha101.local.json`中。
+
 通过 Freqtrade 下载 Binance futures 数据：
+
 
 ```bash
 python -m alpha101.integrations.freqtrade \
@@ -122,26 +134,6 @@ python -m alpha101.integrations.freqtrade \
   --timerange 20250101-20260330
 ```
 
-默认期望数据位于：
-
-```text
-user_data/data/binance/futures/
-```
-
-文件名类似：
-
-```text
-BTC_USDT_USDT-4h-futures.feather
-ETH_USDT_USDT-4h-futures.feather
-```
-
-生成 Binance USDT 永续币种池：
-
-```bash
-python -m alpha101.data.universe \
-  --top-n 50 \
-  --output configs/pairs.binance-usdt-perp.json
-```
 
 ## 运行因子表达式
 
@@ -181,29 +173,6 @@ factor_search_results/<timeframe>/
 4. 通过遗传操作继续迭代表达式
 5. 保存每批搜索结果和汇总结果
 
-`--n-jobs` 控制批量表达式计算和评分的进程数。搜索路径使用专门的 worker：worker 内部完成表达式计算、因子预处理和评分，只把 metrics 返回主进程，避免把完整因子矩阵在进程之间传来传去。表达式数量较多、rolling/corr/rank 较重时通常会更快；如果表达式很少或机器内存紧张，可以改小，或者使用 `--backend serial` 串行执行。
-
-默认 `--backend auto`：Linux/WSL 下会优先使用多进程；Windows 原生环境下会默认退回串行执行，因为 Windows 的 `spawn` 多进程启动和大对象复制成本较高。确实要在 Windows 上强制多进程时，可以显式传 `--backend process`，但建议先从较小的 `--n-jobs 2` 或 `--n-jobs 4` 开始。
-
-## 回测
-
-回测模块位于：
-
-```text
-alpha101/factors/backtesting/
-```
-
-当前主要支持基于因子排序分组的多空回测，指标包括：
-
-- Sharpe
-- 扣费后 Sharpe
-- CAGR
-- 扣费后 CAGR
-- 年化收益
-- 回撤
-- 换手
-- IC 均值与 ICIR
-- funding 成本
 
 ## 研究服务
 
@@ -220,61 +189,3 @@ http://127.0.0.1:8001
 ```
 
 研究服务用于快速输入表达式、查看因子表现、检查回测指标，适合做交互式因子筛选。
-
-## 算子开发
-
-算子代码位于：
-
-```text
-alpha101/factors/operator_lib/
-```
-
-当前拆分为：
-
-- `time_series.py`：时间序列算子
-- `cross_section.py`：截面算子
-- `regression.py`：回归相关算子
-- `transforms.py`：因子后处理与转换
-- `registry.py`：算子注册表与生成元数据
-
-新增算子时需要同时关注：
-
-1. 在合适的实现文件中添加函数
-2. 加入该文件的 `__all__`
-3. 如果要参与表达式生成，在 `registry.py` 的 `OPERATOR_SPECS` 中增加元数据
-4. 跑编译和相关 smoke tests
-
-## 代码分层约定
-
-当前模块边界：
-
-- `data`：数据加载、数据视图、市场元数据
-- `operator_lib`：表达式可调用的底层算子
-- `expression`：表达式解析后的执行环境
-- `generation`：表达式生成、变异、复杂度和语义检查
-- `evaluation`：基础统计指标和因子评分
-- `backtesting`：组合构建、收益曲线和回测指标
-- `search`：搜索流程、缓存、结果保存
-- `research`：Web 研究界面
-
-不要把有明确领域含义的逻辑放入泛化的 `utils`。优先把代码放到对应领域包中；只有跨领域、无业务语义的纯辅助函数才考虑单独抽出。
-
-## 基本验证
-
-编译检查：
-
-```bash
-conda run -n alpha101 python -m compileall -q alpha101 tests
-```
-
-安装开发依赖后运行测试：
-
-```bash
-pytest
-```
-
-如果只想快速确认核心路径，可以运行项目已有的 smoke tests：
-
-```bash
-conda run -n alpha101 python -c "from tests.test_expression_runtime import test_operator_registry_has_explicit_public_names, test_operator_specs_drive_generation_categories, test_expression_batch_serial_and_process_match; from tests.test_backtest import test_backtest_long_short_returns_curve_and_metrics; from tests.test_scoring import test_score_factor_cross_section_returns_expected_keys; test_operator_registry_has_explicit_public_names(); test_operator_specs_drive_generation_categories(); test_expression_batch_serial_and_process_match(); test_backtest_long_short_returns_curve_and_metrics(); test_score_factor_cross_section_returns_expected_keys(); print('smoke tests ok')"
-```
