@@ -71,6 +71,7 @@ def backtest_long_short(
         short_group=config.short_group,
         leverage=config.leverage,
         is_funding_time=is_funding_time,
+        round_trip_fee=config.round_trip_fee,
     )
 
     metrics = compute_metrics(

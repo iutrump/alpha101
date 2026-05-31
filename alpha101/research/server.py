@@ -108,6 +108,8 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
                 k_bars=cfg.trade_per_k_bars,
                 freq=cfg.timeframe,
                 factor_agg="ewma",
+                single_side_fee=cfg.single_side_fee,
+                round_trip_fee=cfg.round_trip_fee,
             ),
         )
     except Exception as exc:
@@ -124,6 +126,8 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
             "leverage": float(payload.leverage),
             "long_group": int(long_group),
             "short_group": int(short_group),
+            "single_side_fee": float(cfg.single_side_fee),
+            "round_trip_fee": float(cfg.round_trip_fee),
         },
         "metrics": metrics,
         "curve": curve_df.to_dict(orient="records"),

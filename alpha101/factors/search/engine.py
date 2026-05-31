@@ -12,11 +12,12 @@ from typing import Dict
 import pandas as pd
 from tqdm import tqdm
 
+from alpha101.config import get_config
 from alpha101.data import FactorDataView, PolarsLongDataView
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.expression.runtime import alpha_fields
 from alpha101.factors.generation import FactorGenerator
-from alpha101.factors.evaluation import score_factor_cross_section
+from alpha101.factors.evaluation import score_factor_search
 from alpha101.factors.search.results import SearchResultStore
 from alpha101.factors.search.strategies import genetic_search
 from alpha101.factors.search.worker import evaluate_search_item, init_search_worker
@@ -33,6 +34,8 @@ class FactorSearchEngine:
         n_quantiles: int = 5,
         forward_periods: int = 1,
         expression_backend: str = "pandas",
+        transaction_cost: float | None = None,
+        segment_ratios: tuple[float, float, float] | list[float] | None = None,
     ):
         if expression_backend not in {"pandas", "polars"}:
             raise ValueError("expression_backend must be either 'pandas' or 'polars'")
@@ -48,6 +51,10 @@ class FactorSearchEngine:
         self.n_quantiles = n_quantiles
         self.forward_periods = forward_periods
         self.expression_backend = expression_backend
+        cfg = get_config()
+        self.transaction_cost = float(cfg.round_trip_fee if transaction_cost is None else transaction_cost)
+        raw_segment_ratios = cfg.search_segment_ratios if segment_ratios is None else segment_ratios
+        self.segment_ratios = tuple(float(value) for value in raw_segment_ratios)
         self.evaluation_cache: dict[str, dict] = {}
         self.seen_expressions: set[str] = set()
         self.max_complexity = 36.0
@@ -198,7 +205,16 @@ class FactorSearchEngine:
         items = list(named_expressions.items())
 
         if backend == "serial" or len(items) <= 1:
-            init_search_worker(fields, close, self.n_quantiles, self.forward_periods, self.min_obs, self.expression_backend)
+            init_search_worker(
+                fields,
+                close,
+                self.n_quantiles,
+                self.forward_periods,
+                self.min_obs,
+                self.expression_backend,
+                self.segment_ratios,
+                self.transaction_cost,
+            )
             iterator = tqdm(items, desc="Evaluating factors") if progress_bar else items
             return {
                 name: (metrics, error, error_traceback)
@@ -216,7 +232,16 @@ class FactorSearchEngine:
             with ProcessPoolExecutor(
                 max_workers=max_workers,
                 initializer=init_search_worker,
-                initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs, self.expression_backend),
+                initargs=(
+                    fields,
+                    close,
+                    self.n_quantiles,
+                    self.forward_periods,
+                    self.min_obs,
+                    self.expression_backend,
+                    self.segment_ratios,
+                    self.transaction_cost,
+                ),
             ) as executor:
                 self._collect_metric_results(executor, items, results, pbar)
         if pbar is not None:
@@ -259,12 +284,15 @@ class FactorSearchEngine:
             raise ValueError(f"Complexity too high (> {self.max_complexity})")
 
     def _score_factor(self, factor_df: pd.DataFrame, *, preprocess: bool = True) -> dict:
-        return score_factor_cross_section(
+        return score_factor_search(
             factor_df,
             self.wide_data["close"],
             n_quantiles=self.n_quantiles,
             forward_periods=self.forward_periods,
             preprocess=preprocess,
+            min_segment_obs=self.min_obs,
+            segment_ratios=self.segment_ratios,
+            transaction_cost=self.transaction_cost,
         )
 
     def _evaluate_expression(self, factor_expr: str):
@@ -316,7 +344,16 @@ class FactorSearchEngine:
         self._metrics_executor = ProcessPoolExecutor(
             max_workers=max(1, int(worker_count)),
             initializer=init_search_worker,
-            initargs=(fields, close, self.n_quantiles, self.forward_periods, self.min_obs, self.expression_backend),
+            initargs=(
+                fields,
+                close,
+                self.n_quantiles,
+                self.forward_periods,
+                self.min_obs,
+                self.expression_backend,
+                self.segment_ratios,
+                self.transaction_cost,
+            ),
         )
         try:
             yield

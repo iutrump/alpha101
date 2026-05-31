@@ -105,11 +105,6 @@ def genetic_search(
                 f"cache_size={len(search_engine.evaluation_cache)}"
             )
 
-    if best_overall:
-        save_started = time.perf_counter()
-        search_engine.save_batch_results([best_overall["metrics"]], "genetic_best_overall")
-        if profile:
-            print(f"[profile] save_best={time.perf_counter() - save_started:.3f}s")
     if profile:
         print(f"[profile] init_population={init_elapsed:.3f}s total_search={time.perf_counter() - search_started:.3f}s")
     return best_overall

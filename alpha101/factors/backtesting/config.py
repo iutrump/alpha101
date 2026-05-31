@@ -3,10 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SINGLE_SIDE_FEE = 0.0005
-ROUND_TRIP_FEE = SINGLE_SIDE_FEE * 2
-
-
 @dataclass(frozen=True)
 class LongShortBacktestConfig:
     n_quantiles: int = 5
@@ -16,3 +12,5 @@ class LongShortBacktestConfig:
     k_bars: int = 1
     freq: str = "1d"
     factor_agg: str = "ewma"
+    single_side_fee: float = 0.0005
+    round_trip_fee: float = 0.001

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import pandas as pd
 
 
 class SearchResultStore:
     def __init__(self, output_dir: str | Path, timeframe: str):
-        self.output_dir = Path(output_dir) / timeframe
+        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.output_dir = Path(output_dir) / timeframe / run_timestamp
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.all_results: list[dict] = []
 
@@ -18,11 +20,12 @@ class SearchResultStore:
         results = [r for r in results if r]
         if not results:
             return
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_path = self.output_dir / f"{batch_name}_{timestamp}.csv"
-        json_path = self.output_dir / f"{batch_name}_{timestamp}.json"
-        pd.DataFrame(results).to_csv(csv_path, index=False)
-        json_path.write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
+        csv_path = self.output_dir / f"{batch_name}.csv"
+        json_path = self.output_dir / f"{batch_name}.json"
+
+        rounded_results = [_round_floats(result) for result in results]
+        _ordered_frame(rounded_results).to_csv(csv_path, index=False, float_format="%.3f")
+        json_path.write_text(json.dumps(rounded_results, indent=2, default=str), encoding="utf-8")
         self.all_results.extend(results)
 
     def summarize(self, normalize_expression) -> None:
@@ -37,9 +40,9 @@ class SearchResultStore:
 
         success_df["expression_norm"] = success_df["expression"].map(normalize_expression)
         success_df = success_df.sort_values("fitness", ascending=False).drop_duplicates("expression_norm")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        summary_path = self.output_dir / f"summary_{timestamp}.csv"
-        success_df.to_csv(summary_path, index=False)
+        summary_path = self.output_dir / "summary.csv"
+        success_df = _ordered_frame(success_df.to_dict(orient="records"))
+        success_df.to_csv(summary_path, index=False, float_format="%.3f")
 
         print(f"Total factors evaluated: {len(df)}")
         print(f"Successful factors: {len(success_df)}")
@@ -47,3 +50,44 @@ class SearchResultStore:
         cols = ["factor_name", "fitness", "sharpe_ratio", "ic_ir", "returns", "expression"]
         print(success_df[cols].head(10).to_string(index=False))
         print(f"Summary saved to {summary_path}")
+
+
+FRONT_COLUMNS = [
+    "factor_name",
+    "expression",
+    "status",
+    "fitness",
+    "test_fitness",
+    "test_sharpe",
+    "test_returns",
+    "test_ic_ir",
+    "test_obs_count",
+    "valid_fitness",
+    "valid_sharpe",
+    "valid_returns",
+    "train_fitness",
+    "train_sharpe",
+    "train_returns",
+    "sharpe_ratio",
+    "returns",
+    "ic_ir",
+    "turnover",
+    "drawdown",
+]
+
+
+def _ordered_frame(records: list[dict]) -> pd.DataFrame:
+    df = pd.DataFrame(records)
+    front = [col for col in FRONT_COLUMNS if col in df.columns]
+    rest = [col for col in df.columns if col not in front]
+    return df[front + rest]
+
+
+def _round_floats(value: Any) -> Any:
+    if isinstance(value, float):
+        return round(value, 3) if math.isfinite(value) else value
+    if isinstance(value, dict):
+        return {key: _round_floats(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_round_floats(item) for item in value]
+    return value

@@ -5,8 +5,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from alpha101.factors.backtesting.config import ROUND_TRIP_FEE
-
 
 def aggregate_factor(factor_raw: np.ndarray, k_bars: int, factor_agg: str) -> np.ndarray:
     if k_bars <= 1:
@@ -47,6 +45,7 @@ def compute_daily_arrays(
     short_group: int,
     leverage: float,
     is_funding_time: np.ndarray,
+    round_trip_fee: float,
 ) -> dict[str, Any]:
     valid_mask = np.isfinite(factor_data) & np.isfinite(target_forward_eval)
     n_dates = factor_data.shape[0]
@@ -101,7 +100,7 @@ def compute_daily_arrays(
         prev_long_idx = long_idx
         prev_short_idx = short_idx
 
-    trading_cost_daily = turnover_daily * ROUND_TRIP_FEE * leverage
+    trading_cost_daily = turnover_daily * float(round_trip_fee) * leverage
     daily_pnl_net = daily_pnl - trading_cost_daily - funding_cost_daily
     return {
         "daily_pnl": daily_pnl,

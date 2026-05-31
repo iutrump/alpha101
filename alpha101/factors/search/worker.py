@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from alpha101.factors.evaluation import forward_returns_array, score_factor_cross_section_array
+from alpha101.factors.evaluation import forward_returns_array, score_factor_search_array
 from alpha101.factors.expression.runtime import build_eval_env, normalize_expression_code
 from alpha101.factors.expression.worker import prepare_factor_result, result_is_all_nan
 
@@ -17,6 +17,8 @@ _SEARCH_WORKER_N_QUANTILES = 5
 _SEARCH_WORKER_FORWARD_PERIODS = 1
 _SEARCH_WORKER_MIN_OBS = 30
 _SEARCH_WORKER_EXPRESSION_BACKEND = "pandas"
+_SEARCH_WORKER_SEGMENT_RATIOS = (0.70, 0.15, 0.15)
+_SEARCH_WORKER_TRANSACTION_COST = 0.001
 
 
 def init_search_worker(
@@ -26,6 +28,8 @@ def init_search_worker(
     forward_periods: int,
     min_obs: int,
     expression_backend: str = "pandas",
+    segment_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
+    transaction_cost: float = 0.001,
 ) -> None:
     global _SEARCH_WORKER_ENV_BASE
     global _SEARCH_WORKER_CLOSE_COLUMNS
@@ -34,6 +38,8 @@ def init_search_worker(
     global _SEARCH_WORKER_FORWARD_PERIODS
     global _SEARCH_WORKER_MIN_OBS
     global _SEARCH_WORKER_EXPRESSION_BACKEND
+    global _SEARCH_WORKER_SEGMENT_RATIOS
+    global _SEARCH_WORKER_TRANSACTION_COST
 
     _SEARCH_WORKER_EXPRESSION_BACKEND = expression_backend
     if expression_backend == "polars":
@@ -47,6 +53,8 @@ def init_search_worker(
     _SEARCH_WORKER_N_QUANTILES = n_quantiles
     _SEARCH_WORKER_FORWARD_PERIODS = forward_periods
     _SEARCH_WORKER_MIN_OBS = min_obs
+    _SEARCH_WORKER_SEGMENT_RATIOS = tuple(float(value) for value in segment_ratios)
+    _SEARCH_WORKER_TRANSACTION_COST = float(transaction_cost)
 
 
 def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str | None, str | None]:
@@ -85,10 +93,13 @@ def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str |
         target_indices = _SEARCH_WORKER_CLOSE_COLUMNS.get_indexer(factor_columns)
         if (target_indices < 0).any():
             raise ValueError("Factor contains symbols missing from close target")
-        metrics = score_factor_cross_section_array(
+        metrics = score_factor_search_array(
             factor_values,
             _SEARCH_WORKER_TARGET[:, target_indices],
             n_quantiles=_SEARCH_WORKER_N_QUANTILES,
+            min_segment_obs=_SEARCH_WORKER_MIN_OBS,
+            segment_ratios=_SEARCH_WORKER_SEGMENT_RATIOS,
+            transaction_cost=_SEARCH_WORKER_TRANSACTION_COST,
         )
         if metrics["obs_count"] < _SEARCH_WORKER_MIN_OBS:
             raise ValueError(f"Insufficient observations: {metrics['obs_count']} < {_SEARCH_WORKER_MIN_OBS}")

@@ -23,6 +23,9 @@ class ProjectConfig:
     test_end_date: Optional[str] = "2026-03-30"
     strategy_config_path: Path = Path("configs/freqtrade.example.json")
     output_dir: Path = Path("factor_search_results")
+    single_side_fee: float = 0.0005
+    round_trip_fee: float = 0.001
+    search_segment_ratios: list[float] = field(default_factory=lambda: [0.70, 0.15, 0.15])
 
 
 def _load_json(path: Path) -> dict:
@@ -48,6 +51,14 @@ def get_config(config_path: str | Path | None = None) -> ProjectConfig:
         if key.endswith("_path") or key in {"data_root", "output_dir"}:
             value = Path(value)
         setattr(cfg, key, value)
+
+    if "round_trip_fee" not in payload and "single_side_fee" in payload:
+        cfg.round_trip_fee = float(cfg.single_side_fee) * 2.0
+    cfg.single_side_fee = float(cfg.single_side_fee)
+    cfg.round_trip_fee = float(cfg.round_trip_fee)
+    cfg.search_segment_ratios = [float(value) for value in cfg.search_segment_ratios]
+    if len(cfg.search_segment_ratios) != 3 or any(value <= 0 for value in cfg.search_segment_ratios):
+        raise ValueError("search_segment_ratios must contain three positive values")
 
     if not cfg.pairs:
         cfg.pairs = load_pairs_from_strategy(cfg.strategy_config_path)

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from alpha101.data import nan_rowwise_corr
-from alpha101.factors.backtesting.config import ROUND_TRIP_FEE, SINGLE_SIDE_FEE, LongShortBacktestConfig
+from alpha101.factors.backtesting.config import LongShortBacktestConfig
 from alpha101.factors.evaluation.metrics import (
     information_ratio,
     max_drawdown_array,
@@ -62,8 +62,8 @@ def compute_metrics(
         "symbols": int(n_symbols),
         "margin": float(safe_float(returns_mean) * 1000.0),
         "margin_after_cost": float(safe_float(returns_mean_net) * 1000.0),
-        "single_side_fee": float(SINGLE_SIDE_FEE),
-        "round_trip_fee": float(ROUND_TRIP_FEE),
+        "single_side_fee": float(config.single_side_fee),
+        "round_trip_fee": float(config.round_trip_fee),
         "avg_long_funding": float(daily["avg_long_funding"]),
         "avg_short_funding": float(daily["avg_short_funding"]),
         "funding_annual": float(funding_annual),

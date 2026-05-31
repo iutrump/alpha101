@@ -8,5 +8,8 @@
   "lookback_days": 0,
   "test_start_date": "2025-01-01",
   "test_end_date": "2026-03-30",
+  "single_side_fee": 0.0005,
+  "round_trip_fee": 0.001,
+  "search_segment_ratios": [0.7, 0.15, 0.15],
   "output_dir": "factor_search_results"
 }

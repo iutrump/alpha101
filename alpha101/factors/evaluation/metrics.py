@@ -28,19 +28,21 @@ def max_drawdown_array(equity: np.ndarray) -> float:
     return safe_float(np.min(drawdown))
 
 
-def sharpe_ratio(returns, *, scale: float = 1.0) -> float:
+def sharpe_ratio(returns, *, scale: float = 1.0, eps: float = 1e-12) -> float:
     arr = np.asarray(returns, dtype=float)
     if arr.size == 0:
         return 0.0
     mean = safe_float(np.nanmean(arr))
-    std = safe_float(np.nanstd(arr, ddof=1))
-    return mean / std * scale if std > 0 else 0.0
+    finite = arr[np.isfinite(arr)]
+    std = safe_float(np.std(finite, ddof=1)) if finite.size > 1 else 0.0
+    return mean / std * scale if std > eps else 0.0
 
 
 def information_ratio(values, eps: float = 1e-8) -> tuple[float, float, float]:
     series = pd.Series(values, dtype=float).replace([np.inf, -np.inf], np.nan)
     mean = safe_float(series.mean())
-    std = safe_float(series.std(ddof=1))
+    valid = series.dropna()
+    std = safe_float(valid.std(ddof=1)) if len(valid) > 1 else 0.0
     return mean, std, mean / (std + eps)
 
 

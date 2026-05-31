@@ -11,6 +11,8 @@ from alpha101.factors.evaluation.scoring import (
     forward_returns_array,
     score_factor_cross_section,
     score_factor_cross_section_array,
+    score_factor_search,
+    score_factor_search_array,
 )
 
 __all__ = [
@@ -22,6 +24,8 @@ __all__ = [
     "safe_float",
     "score_factor_cross_section",
     "score_factor_cross_section_array",
+    "score_factor_search",
+    "score_factor_search_array",
     "sharpe_ratio",
     "win_rate",
 ]

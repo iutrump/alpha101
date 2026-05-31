@@ -39,6 +39,8 @@ def main() -> None:
         n_quantiles=args.n_quantiles,
         forward_periods=args.forward_periods,
         expression_backend=args.expression_backend,
+        transaction_cost=cfg.round_trip_fee,
+        segment_ratios=cfg.search_segment_ratios,
     )
 
     search_engine.genetic_search(
