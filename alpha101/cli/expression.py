@@ -50,12 +50,7 @@ def main() -> None:
     result = process_factor_wide_format(result)
     result.columns = pd.MultiIndex.from_product([["alpha_test"], result.columns])
 
-    n_bars = int(
-        cfg.pre_buffer_candles
-        * pd.Timedelta("1d").total_seconds()
-        // pd.Timedelta(cfg.timeframe).total_seconds()
-    )
-    df = pd.concat([wide_data, result], axis=1).iloc[n_bars:]
+    df = pd.concat([wide_data, result], axis=1)
     print(df.tail())
 
 

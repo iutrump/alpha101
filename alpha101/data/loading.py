@@ -49,7 +49,7 @@ def _parse_dt_utc(value) -> pd.Timestamp | None:
 
 def compute_data_window(
     timeframe: str,
-    lookback: int,
+    lookback_days: int | float,
     train_bars: int | None,
     test_start_date,
     test_end_date,
@@ -61,11 +61,19 @@ def compute_data_window(
 
     window_start = None
     if start_dt is not None:
-        total_history_bars = (train_bars or 0) + lookback + buffer
+        lookback_bars = lookback_days_to_bars(lookback_days, timeframe)
+        total_history_bars = (train_bars or 0) + lookback_bars + buffer
         window_start = start_dt - total_history_bars * bar_delta
 
     window_end = end_dt + bar_delta if end_dt is not None else None
     return window_start, window_end
+
+
+def lookback_days_to_bars(lookback_days: int | float, timeframe: str) -> int:
+    if lookback_days <= 0:
+        return 0
+    seconds = float(lookback_days) * pd.Timedelta("1D").total_seconds()
+    return int(np.ceil(seconds / timeframe_to_timedelta(timeframe).total_seconds()))
 
 
 def load_pair_frame(
@@ -148,7 +156,7 @@ def wide_to_long(wide: pd.DataFrame) -> pd.DataFrame:
 
 def build_research_wide_frame(
     pairs: list[str],
-    lookback: int,
+    lookback_days: int | float,
     data_root: Path,
     timeframe: str,
     *,
@@ -160,7 +168,7 @@ def build_research_wide_frame(
 ) -> pd.DataFrame:
     window_start, window_end = compute_data_window(
         timeframe,
-        lookback,
+        lookback_days,
         train_bars,
         test_start_date,
         test_end_date,
@@ -195,4 +203,3 @@ def build_research_wide_frame(
     panel = pd.concat(frames, ignore_index=True)
     panel = filter_symbols_by_missing(panel)
     return long_to_wide(panel, buffer=buffer)
-

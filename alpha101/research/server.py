@@ -41,16 +41,10 @@ def _load_context() -> dict[str, Any]:
         buffer=cfg.pre_buffer_candles,
     )
     engine = FastExpressionEngine(FactorDataView(wide_data))
-    n_bars = int(
-        cfg.pre_buffer_candles
-        * pd.Timedelta("1d").total_seconds()
-        // pd.Timedelta(cfg.timeframe).total_seconds()
-    )
     return {
         "cfg": cfg,
         "wide_data": wide_data,
         "engine": engine,
-        "n_bars": n_bars,
     }
 
 
@@ -92,7 +86,6 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
     cfg = ctx["cfg"]
     engine: FastExpressionEngine = ctx["engine"]
     wide_data: pd.DataFrame = ctx["wide_data"]
-    n_bars: int = ctx["n_bars"]
 
     try:
         factor_wide = engine.evaluate(expression)
@@ -102,7 +95,7 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
         factor_name = "alpha_test"
         factor_df.columns = pd.MultiIndex.from_product([[factor_name], factor_df.columns])
 
-        panel_df = pd.concat([wide_data, factor_df], axis=1).iloc[n_bars:]
+        panel_df = pd.concat([wide_data, factor_df], axis=1)
         curve_df, metrics = backtest_long_short(
             panel_df=panel_df,
             factor_name=factor_name,
