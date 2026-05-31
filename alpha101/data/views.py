@@ -91,7 +91,7 @@ def _require_polars():
         import polars as pl
     except ImportError as exc:
         raise ImportError(
-            "Polars expression backend requires `polars`. Install with `python -m pip install -e \".[polars]\"`."
+            "Polars expression backend requires `polars`. Install project dependencies with `python -m pip install -e .`."
         ) from exc
     return pl
 

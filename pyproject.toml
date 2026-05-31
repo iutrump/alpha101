@@ -19,28 +19,18 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "fastapi>=0.100",
+    "freqtrade",
     "numpy>=1.23",
     "pandas>=1.5",
+    "polars>=1.0",
+    "pydantic>=2",
     "pyarrow>=10",
+    "pytest>=8",
     "requests>=2.28",
     "scipy>=1.9",
     "tqdm>=4.64",
-]
-
-[project.optional-dependencies]
-visual = [
-    "fastapi>=0.100",
-    "pydantic>=2",
     "uvicorn>=0.22",
-]
-freqtrade = [
-    "freqtrade",
-]
-dev = [
-    "pytest>=8",
-]
-polars = [
-    "polars>=1.0",
 ]
 
 [project.urls]

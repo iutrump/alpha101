@@ -9,7 +9,7 @@
 - 多空组合回测
 - 简单的 Web 因子检查界面
 
-项目只把 Freqtrade 当作可选的数据下载后端使用。Freqtrade 负责下载交易所 K 线数据，`alpha101` 负责把本地数据组织成因子研究面板，并在此基础上做表达式计算、因子搜索和回测。
+项目使用 Freqtrade 下载交易所 K 线数据，`alpha101` 负责把本地数据组织成因子研究面板，并在此基础上做表达式计算、因子搜索和回测。
 
 ## 目录结构
 
@@ -37,7 +37,7 @@ configs/
   alpha101.example.json        # alpha101 配置示例
   freqtrade.example.json       # Freqtrade 配置示例
 3rdparty/
-  freqtrade/                   # 可选 Freqtrade 子模块
+  freqtrade/                   # Freqtrade 子模块
 ```
 
 ## 安装环境
@@ -47,45 +47,12 @@ configs/
 ```bash
 conda create -n alpha101 python=3.12
 conda activate alpha101
-python -m pip install --upgrade pip
 ```
 
 从仓库根目录安装本项目：
 
 ```bash
 python -m pip install -e .
-```
-
-如果需要运行研究服务，再安装可视化依赖：
-
-```bash
-python -m pip install -e ".[visual]"
-```
-
-如果需要用 Freqtrade 下载数据，可以使用仓库里的浅克隆子模块：
-
-```bash
-git submodule update --init --recursive --depth 1 3rdparty/freqtrade
-python -m pip install -r 3rdparty/freqtrade/requirements.txt
-python -m pip install -e 3rdparty/freqtrade
-```
-
-也可以直接安装 Freqtrade：
-
-```bash
-python -m pip install freqtrade
-```
-
-开发和测试依赖：
-
-```bash
-python -m pip install -e ".[dev,visual]"
-```
-
-如果要使用 Polars 表达式后端：
-
-```bash
-python -m pip install -e ".[polars]"
 ```
 
 ## 配置
@@ -108,6 +75,8 @@ Windows PowerShell：
 ```powershell
 $env:ALPHA101_CONFIG = "configs/alpha101.local.json"
 ```
+
+如果没有设置 `ALPHA101_CONFIG`，默认会读取 `configs/alpha101.local.json`。
 
 ## 下载数据
 
@@ -172,19 +141,6 @@ alpha101-expression "ts_rank(close, 10)"
 ```
 
 表达式会在配置指定的数据面板上执行，并输出处理后的因子矩阵摘要。
-
-常见字段包括：
-
-- `open`
-- `high`
-- `low`
-- `close`
-- `volume`
-- `vwap`
-- `returns`
-- `market_return`
-- `cap`
-- `funding`
 
 ## 因子搜索
 

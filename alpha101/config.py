@@ -42,7 +42,7 @@ def load_pairs_from_strategy(path: Path) -> list[str]:
 
 
 def get_config(config_path: str | Path | None = None) -> ProjectConfig:
-    config_path = config_path or os.getenv("ALPHA101_CONFIG", "configs/alpha101.example.json")
+    config_path = config_path or os.getenv("ALPHA101_CONFIG", "configs/alpha101.local.json")
     cfg = ProjectConfig()
     payload = _load_json(Path(config_path))
     for key, value in payload.items():
