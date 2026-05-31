@@ -42,11 +42,20 @@ configs/
 
 ## 安装环境
 
+推荐使用Linux/WSL进行开发，Windows环境因子搜索速度稍慢。
+
 建议使用独立 conda 环境，环境名为 `alpha101`：
 
 ```bash
 conda create -n alpha101 python=3.12
 conda activate alpha101
+```
+
+安装freqtrade，用于数据下载
+```bash
+git submodule update --init --recursive --depth 1 3rdparty/freqtrade
+python -m pip install -r 3rdparty/freqtrade/requirements.txt
+python -m pip install -e 3rdparty/freqtrade
 ```
 
 从仓库根目录安装本项目：
@@ -63,8 +72,11 @@ python -m pip install -e .
 cp configs/alpha101.example.json configs/alpha101.local.json
 cp configs/freqtrade.example.json configs/freqtrade.local.json
 ```
+将`configs/alpha101.local.json`中的`strategy_config_path`改为`configs/freqtrade.local.json`
 
-指定运行时配置：
+程序运行时默认会读取 `configs/alpha101.local.json`
+
+也可以指定运行时配置：
 
 ```bash
 export ALPHA101_CONFIG=configs/alpha101.local.json
@@ -76,7 +88,6 @@ Windows PowerShell：
 $env:ALPHA101_CONFIG = "configs/alpha101.local.json"
 ```
 
-如果没有设置 `ALPHA101_CONFIG`，默认会读取 `configs/alpha101.local.json`。
 
 ## 下载数据
 
@@ -173,11 +184,6 @@ factor_search_results/<timeframe>/
 `--n-jobs` 控制批量表达式计算和评分的进程数。搜索路径使用专门的 worker：worker 内部完成表达式计算、因子预处理和评分，只把 metrics 返回主进程，避免把完整因子矩阵在进程之间传来传去。表达式数量较多、rolling/corr/rank 较重时通常会更快；如果表达式很少或机器内存紧张，可以改小，或者使用 `--backend serial` 串行执行。
 
 默认 `--backend auto`：Linux/WSL 下会优先使用多进程；Windows 原生环境下会默认退回串行执行，因为 Windows 的 `spawn` 多进程启动和大对象复制成本较高。确实要在 Windows 上强制多进程时，可以显式传 `--backend process`，但建议先从较小的 `--n-jobs 2` 或 `--n-jobs 4` 开始。
-
-`--expression-backend` 控制表达式计算后端：
-
-- `pandas`：默认后端，语义最稳定
-- `polars`：实验后端，使用 `operator_lib/polars/` 的算子注册表，适合对比 genetic search 的 evaluate 阶段耗时
 
 ## 回测
 

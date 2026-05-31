@@ -23,7 +23,6 @@ dependencies = [
     "freqtrade",
     "numpy>=1.23",
     "pandas>=1.5",
-    "polars>=1.0",
     "pydantic>=2",
     "pyarrow>=10",
     "pytest>=8",

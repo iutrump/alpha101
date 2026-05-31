@@ -13,7 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from alpha101.config import get_config
-from alpha101.data import FactorDataView, PolarsLongDataView
+from alpha101.data import FactorDataView
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.expression.runtime import alpha_fields
 from alpha101.factors.generation import FactorGenerator
@@ -33,16 +33,9 @@ class FactorSearchEngine:
         timeframe: str = "1d",
         n_quantiles: int = 5,
         forward_periods: int = 1,
-        expression_backend: str = "pandas",
         transaction_cost: float | None = None,
         segment_ratios: tuple[float, float, float] | list[float] | None = None,
     ):
-        if expression_backend not in {"pandas", "polars"}:
-            raise ValueError("expression_backend must be either 'pandas' or 'polars'")
-        if expression_backend == "polars":
-            from alpha101.factors.operator_lib.polars.utils import require_polars
-
-            require_polars()
         self.wide_data = wide_data
         self.alpha_obj = FactorDataView(wide_data)
         self.engine = FastExpressionEngine(self.alpha_obj)
@@ -50,7 +43,6 @@ class FactorSearchEngine:
         self.results = SearchResultStore(output_dir, timeframe)
         self.n_quantiles = n_quantiles
         self.forward_periods = forward_periods
-        self.expression_backend = expression_backend
         cfg = get_config()
         self.transaction_cost = float(cfg.round_trip_fee if transaction_cost is None else transaction_cost)
         raw_segment_ratios = cfg.search_segment_ratios if segment_ratios is None else segment_ratios
@@ -91,10 +83,6 @@ class FactorSearchEngine:
             result = self._evaluate_expression(factor_expr)
             if result is None or self._result_is_all_nan(result):
                 raise ValueError("All NaN result")
-            if self.expression_backend == "polars":
-                from alpha101.factors.expression.polars_runtime import polars_result_to_pandas
-
-                result = polars_result_to_pandas(result)
             result.index.name = "date"
             result.columns.name = "symbol"
 
@@ -211,7 +199,6 @@ class FactorSearchEngine:
                 self.n_quantiles,
                 self.forward_periods,
                 self.min_obs,
-                self.expression_backend,
                 self.segment_ratios,
                 self.transaction_cost,
             )
@@ -238,7 +225,6 @@ class FactorSearchEngine:
                     self.n_quantiles,
                     self.forward_periods,
                     self.min_obs,
-                    self.expression_backend,
                     self.segment_ratios,
                     self.transaction_cost,
                 ),
@@ -296,22 +282,12 @@ class FactorSearchEngine:
         )
 
     def _evaluate_expression(self, factor_expr: str):
-        if self.expression_backend == "polars":
-            from alpha101.factors.expression.polars_runtime import alpha_polars_fields, evaluate_polars_expression
-
-            return evaluate_polars_expression(factor_expr, alpha_polars_fields(PolarsLongDataView(self.wide_data)))
         return self.engine.evaluate(factor_expr)
 
     def _expression_fields(self) -> dict:
-        if self.expression_backend == "polars":
-            return alpha_fields(self.alpha_obj)
         return alpha_fields(self.alpha_obj)
 
     def _result_is_all_nan(self, result) -> bool:
-        if self.expression_backend == "polars":
-            from alpha101.factors.expression.polars_runtime import polars_result_is_all_nan
-
-            return polars_result_is_all_nan(result)
         return result.isnull().all().all()
 
     @staticmethod
@@ -350,7 +326,6 @@ class FactorSearchEngine:
                 self.n_quantiles,
                 self.forward_periods,
                 self.min_obs,
-                self.expression_backend,
                 self.segment_ratios,
                 self.transaction_cost,
             ),
