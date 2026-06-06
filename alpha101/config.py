@@ -24,7 +24,7 @@ class ProjectConfig:
     lookback_days: int = 0
     test_start_date: Optional[str] = "2025-01-01"
     test_end_date: Optional[str] = "2026-03-30"
-    strategy_config_path: Path = Path("configs/freqtrade.example.json")
+    strategy_config_path: Optional[Path] = None
     output_dir: Path = Path("factor_search_results")
     single_side_fee: float = 0.0005
     round_trip_fee: float = 0.001
@@ -45,13 +45,13 @@ def load_pairs_from_strategy(path: Path) -> list[str]:
 
 
 def get_config(config_path: str | Path | None = None) -> ProjectConfig:
-    config_path = config_path or os.getenv("ALPHA101_CONFIG", "configs/alpha101.local.json")
+    config_path = Path(config_path or os.getenv("ALPHA101_CONFIG", "configs/alpha101.json"))
     cfg = ProjectConfig()
-    payload = _load_json(Path(config_path))
+    payload = _load_json(config_path)
     for key, value in payload.items():
         if not hasattr(cfg, key):
             continue
-        if key.endswith("_path") or key in {"data_root", "output_dir"}:
+        if value is not None and (key.endswith("_path") or key in {"data_root", "output_dir"}):
             value = Path(value)
         setattr(cfg, key, value)
 
@@ -64,5 +64,6 @@ def get_config(config_path: str | Path | None = None) -> ProjectConfig:
         raise ValueError("search_segment_ratios must contain three positive values")
 
     if not cfg.pairs:
-        cfg.pairs = load_pairs_from_strategy(cfg.strategy_config_path)
+        pair_source = cfg.strategy_config_path or config_path
+        cfg.pairs = load_pairs_from_strategy(pair_source)
     return cfg

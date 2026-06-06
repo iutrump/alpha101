@@ -59,3 +59,25 @@ def test_config_loads_quantile_groups(tmp_path):
     assert cfg.n_quantiles == 10
     assert cfg.long_group == 10
     assert cfg.short_group == 1
+
+
+def test_config_loads_pairs_from_same_file_exchange_whitelist(tmp_path):
+    config_path = tmp_path / "alpha101.json"
+    config_path.write_text(
+        """
+        {
+          "pairs": [],
+          "exchange": {
+            "pair_whitelist": [
+              "BTC/USDT:USDT",
+              "ETH/USDT:USDT"
+            ]
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    cfg = get_config(config_path)
+
+    assert cfg.pairs == ["BTC_USDT_USDT", "ETH_USDT_USDT"]

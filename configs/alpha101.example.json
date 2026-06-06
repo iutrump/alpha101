@@ -1,15 +1,42 @@
 {
   "data_root": "user_data/data/binance/futures",
-  "strategy_config_path": "configs/freqtrade.example.json",
   "pairs": [],
   "timeframe": "4h",
   "pre_buffer_candles": 200,
   "trade_per_k_bars": 1,
+  "n_quantiles": 5,
+  "long_group": null,
+  "short_group": 1,
   "lookback_days": 0,
   "test_start_date": "2025-01-01",
   "test_end_date": "2026-03-30",
   "single_side_fee": 0.0005,
   "round_trip_fee": 0.001,
   "search_segment_ratios": [0.7, 0.15, 0.15],
-  "output_dir": "factor_search_results"
+  "output_dir": "factor_search_results",
+
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "trading_mode": "futures",
+  "margin_mode": "isolated",
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "dry_run": true,
+  "exchange": {
+    "name": "binance",
+    "key": "",
+    "secret": "",
+    "ccxt_config": {},
+    "ccxt_async_config": {},
+    "pair_whitelist": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "BNB/USDT:USDT",
+      "SOL/USDT:USDT",
+      "XRP/USDT:USDT",
+      "ADA/USDT:USDT",
+      "DOGE/USDT:USDT",
+      "LINK/USDT:USDT"
+    ],
+    "pair_blacklist": []
+  }
 }

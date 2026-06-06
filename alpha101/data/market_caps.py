@@ -174,7 +174,7 @@ def main() -> None:
     parser.add_argument(
         "--pairs-json",
         type=str,
-        default="configs/freqtrade.example.json",
+        default="configs/alpha101.json",
         help="JSON file containing exchange.pair_whitelist or pair_whitelist.",
     )
     parser.add_argument("--save-csv", type=str, default="", help="CSV output path. Default is auto-generated.")

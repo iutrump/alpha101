@@ -37,8 +37,7 @@ alpha101/
     server.py                  # FastAPI 研究服务
     templates/                 # 研究服务页面
 configs/
-  alpha101.example.json        # alpha101 配置示例
-  freqtrade.example.json       # Freqtrade 配置示例
+  alpha101.example.json        # alpha101 与 Freqtrade 合并配置示例
 3rdparty/
   freqtrade/                   # Freqtrade 子模块
 ```
@@ -72,23 +71,23 @@ python -m pip install -e .
 先复制示例配置，避免直接修改模板文件：
 
 ```bash
-cp configs/alpha101.example.json configs/alpha101.local.json
-cp configs/freqtrade.example.json configs/freqtrade.local.json
+cp configs/alpha101.example.json configs/alpha101.json
 ```
-将`configs/alpha101.local.json`中的`strategy_config_path`改为`configs/freqtrade.local.json`
 
-程序运行时默认会读取 `configs/alpha101.local.json`
+程序运行时默认会读取 `configs/alpha101.json`。配置文件上半部分是 alpha101 的研究参数，下半部分是 Freqtrade 下载数据需要的交易所和币种池参数。
+
+标准 JSON 不支持注释，所以示例文件保持为可直接解析的 JSON。字段含义以 README 为准。
 
 也可以指定运行时配置：
 
 ```bash
-export ALPHA101_CONFIG=configs/alpha101.local.json
+export ALPHA101_CONFIG=configs/alpha101.json
 ```
 
 Windows PowerShell：
 
 ```powershell
-$env:ALPHA101_CONFIG = "configs/alpha101.local.json"
+$env:ALPHA101_CONFIG = "configs/alpha101.json"
 ```
 
 
@@ -100,7 +99,7 @@ $env:ALPHA101_CONFIG = "configs/alpha101.local.json"
 freqtrade create-userdir --userdir user_data
 ```
 
-如果访问 Binance 需要代理，在 `configs/freqtrade.local.json` 里配置：
+如果访问 Binance 需要代理，在 `configs/alpha101.json` 里配置：
 
 ```json
 {
@@ -123,7 +122,7 @@ python -m alpha101.data.universe \
   --top-n 50 \
   --output configs/pairs.binance-usdt-perp.json
 ```
-然后复制到`configs/alpha101.local.json`中。
+然后复制到 `configs/alpha101.json` 的 `exchange.pair_whitelist` 中。如果 `pairs` 为空，alpha101 会自动从 `exchange.pair_whitelist` 读取币种池。
 
 通过 Freqtrade 下载 Binance futures 数据：
 
@@ -131,7 +130,7 @@ python -m alpha101.data.universe \
 ```bash
 python -m alpha101.integrations.freqtrade \
   --freqtrade-bin freqtrade \
-  --config configs/freqtrade.local.json \
+  --config configs/alpha101.json \
   --timeframes 1h 4h 1d \
   --timerange 20260101-20260630
 ```
@@ -153,7 +152,7 @@ alpha101-expression "ts_rank(close, 10)"
 
 ```bash
 alpha101-factor-search \
-  --config configs/alpha101.local.json \
+  --config configs/alpha101.json \
   --strategy genetic \
   --population 30 \
   --generations 5 \

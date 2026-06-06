@@ -19,9 +19,8 @@ venv/
 env/
 
 # Local configs
-configs/*.local.json
-configs/local*.json
-configs/*-usdt-perp.json
+configs/*.json
+!configs/*.example.json
 
 # Runtime data and generated outputs
 user_data/

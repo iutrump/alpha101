@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument(
         "-c",
         "--config",
-        default="configs/freqtrade.example.json",
+        default="configs/alpha101.json",
         help="Freqtrade config containing exchange.pair_whitelist.",
     )
     parser.add_argument(
