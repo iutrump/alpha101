@@ -10,6 +10,7 @@ from alpha101.factors.backtesting.config import LongShortBacktestConfig
 from alpha101.factors.evaluation.metrics import (
     information_ratio,
     max_drawdown_array,
+    profit_loss_ratio,
     safe_float,
     sharpe_ratio,
     win_rate,
@@ -27,7 +28,9 @@ def compute_metrics(
     daily_pnl = daily["daily_pnl"]
     daily_pnl_net = daily["daily_pnl_net"]
     cum_pnl = np.cumprod(1.0 + daily_pnl)
+    cum_pnl_net = np.cumprod(1.0 + daily_pnl_net)
     max_drawdown = max_drawdown_array(cum_pnl)
+    max_drawdown_net = max_drawdown_array(cum_pnl_net)
 
     returns_mean = float(np.mean(daily_pnl))
     sharpe = sharpe_ratio(daily_pnl, scale=np.sqrt(len(daily_pnl)))
@@ -54,7 +57,12 @@ def compute_metrics(
         "returns_after_cost": float(returns_annual_net),
         "turnover": float(daily["turnover"]),
         "win_rate": float(win_rate(daily_pnl)),
-        "drawdown": float(max_drawdown),
+        "win_rate_after_cost": float(win_rate(daily_pnl_net)),
+        "profit_loss_ratio": float(profit_loss_ratio(daily_pnl)),
+        "profit_loss_ratio_after_cost": float(profit_loss_ratio(daily_pnl_net)),
+        "drawdown": float(max_drawdown_net),
+        "drawdown_before_cost": float(max_drawdown),
+        "drawdown_after_cost": float(max_drawdown_net),
         "ic_mean": float(ic_mean),
         "ic_std": float(ic_std),
         "ic_ir": float(ic_ir),

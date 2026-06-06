@@ -4,6 +4,17 @@ import numpy as np
 import pandas as pd
 
 from alpha101.factors.backtesting import LongShortBacktestConfig, backtest_long_short
+from alpha101.factors.backtesting.simulation import forward_compound_returns
+
+
+def test_forward_compound_returns_starts_from_current_forward_target():
+    target = np.array([[0.01], [0.02], [0.03], [0.04], [0.05]], dtype=np.float32)
+
+    compounded = forward_compound_returns(target, k_bars=3)
+
+    assert np.isclose(compounded[0, 0], (1.01 * 1.02 * 1.03) - 1.0)
+    assert np.isclose(compounded[1, 0], (1.02 * 1.03 * 1.04) - 1.0)
+    assert np.isnan(compounded[3, 0])
 
 
 def test_backtest_long_short_returns_curve_and_metrics():
@@ -32,3 +43,8 @@ def test_backtest_long_short_returns_curve_and_metrics():
     assert metrics["symbols"] == len(symbols)
     assert metrics["long_group"] == 2
     assert metrics["short_group"] == 1
+    assert "profit_loss_ratio" in metrics
+    assert "profit_loss_ratio_after_cost" in metrics
+    assert "drawdown_before_cost" in metrics
+    assert "drawdown_after_cost" in metrics
+    assert metrics["drawdown"] == metrics["drawdown_after_cost"]

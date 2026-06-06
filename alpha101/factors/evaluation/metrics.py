@@ -51,3 +51,17 @@ def win_rate(returns) -> float:
     if arr.size == 0:
         return 0.0
     return safe_float(np.sum(arr > 0) / arr.size)
+
+
+def profit_loss_ratio(returns, eps: float = 1e-12) -> float:
+    arr = np.asarray(returns, dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return 0.0
+    wins = finite[finite > 0]
+    losses = finite[finite < 0]
+    if wins.size == 0 or losses.size == 0:
+        return 0.0
+    avg_win = np.mean(wins)
+    avg_loss = abs(np.mean(losses))
+    return safe_float(avg_win / avg_loss) if avg_loss > eps else 0.0

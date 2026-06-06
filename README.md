@@ -1,5 +1,7 @@
 # alpha101
 
+![alpha101 overview](docs/assets/alpha101-overview.png)
+
 `alpha101` 是一个面向加密货币市场的因子研究工具包，重点支持：
 
 - Alpha101 风格因子表达式
@@ -131,7 +133,7 @@ python -m alpha101.integrations.freqtrade \
   --freqtrade-bin freqtrade \
   --config configs/freqtrade.local.json \
   --timeframes 1h 4h 1d \
-  --timerange 20250101-20260330
+  --timerange 20260101-20260630
 ```
 
 
@@ -155,8 +157,7 @@ alpha101-factor-search \
   --strategy genetic \
   --population 30 \
   --generations 5 \
-  --n-jobs 8 \
-  --expression-backend pandas
+  --n-jobs 8
 ```
 
 搜索结果默认写入：

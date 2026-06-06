@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from alpha101.config import get_config
 from alpha101.data.loading import compute_data_window, lookback_days_to_bars
 
 
@@ -37,3 +38,24 @@ def test_compute_data_window_keeps_open_start_when_no_test_start():
 
     assert start is None
     assert end == pd.Timestamp("2025-01-31", tz="UTC") + pd.Timedelta(days=1)
+
+
+def test_config_loads_quantile_groups(tmp_path):
+    config_path = tmp_path / "alpha101.json"
+    config_path.write_text(
+        """
+        {
+          "pairs": ["BTC_USDT_USDT"],
+          "n_quantiles": 10,
+          "long_group": 10,
+          "short_group": 1
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    cfg = get_config(config_path)
+
+    assert cfg.n_quantiles == 10
+    assert cfg.long_group == 10
+    assert cfg.short_group == 1

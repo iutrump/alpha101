@@ -21,7 +21,7 @@ def forward_compound_returns(target_raw_full: np.ndarray, k_bars: int) -> np.nda
     if k_bars <= 1:
         return target_raw_full
     target_forward_full = np.ones_like(target_raw_full, dtype=np.float32)
-    for step in range(1, k_bars + 1):
+    for step in range(k_bars):
         valid_len = target_raw_full.shape[0] - step
         if valid_len > 0:
             target_forward_full[:valid_len] *= 1.0 + target_raw_full[step:, :]

@@ -18,6 +18,9 @@ class ProjectConfig:
     timeframe: str = "4h"
     pre_buffer_candles: int = 200
     trade_per_k_bars: int = 1
+    n_quantiles: int = 5
+    long_group: int | None = None
+    short_group: int = 1
     lookback_days: int = 0
     test_start_date: Optional[str] = "2025-01-01"
     test_end_date: Optional[str] = "2026-03-30"
