@@ -1,17 +1,18 @@
 # alpha101
 
+[English version](README.en.md)
+
 ![alpha101 overview](docs/assets/alpha101-overview.png)
 
 `alpha101` 是一个面向加密货币市场的因子研究工具包，重点支持：
 
+- 基于遗传算法的因子挖掘
+- 因子回测Web可视化界面
 - Alpha101 风格因子表达式
-- 向量化算子库
-- 随机/遗传因子生成与搜索
-- 截面因子评分
-- 多空组合回测
-- 简单的 Web 因子检查界面
 
-项目使用 Freqtrade 下载交易所 K 线数据，`alpha101` 负责把本地数据组织成因子研究面板，并在此基础上做表达式计算、因子搜索和回测。
+项目使用开源[Freqtrade](https://github.com/freqtrade/freqtrade)框架下载交易所 K 线数据，`alpha101` 负责把本地数据组织成因子研究面板，并在此基础上进行表达式计算、因子搜索和回测。
+
+**该项目仅供学习研究，不提供任何投资建议，请不要将挖掘的因子进行实盘**
 
 ## 目录结构
 
@@ -76,7 +77,6 @@ cp configs/alpha101.example.json configs/alpha101.json
 
 程序运行时默认会读取 `configs/alpha101.json`。配置文件上半部分是 alpha101 的研究参数，下半部分是 Freqtrade 下载数据需要的交易所和币种池参数。
 
-标准 JSON 不支持注释，所以示例文件保持为可直接解析的 JSON。字段含义以 README 为准。
 
 也可以指定运行时配置：
 
@@ -114,16 +114,6 @@ freqtrade create-userdir --userdir user_data
 
 上面的端口适用于本机代理监听在 `127.0.0.1:7890` 的情况；如果你的代理端口不同，改成自己的地址即可。
 
-获取市值最大的前50个 Binance USDT 永续币种池：
-
-
-```bash
-python -m alpha101.data.universe \
-  --top-n 50 \
-  --output configs/pairs.binance-usdt-perp.json
-```
-然后复制到 `configs/alpha101.json` 的 `exchange.pair_whitelist` 中。如果 `pairs` 为空，alpha101 会自动从 `exchange.pair_whitelist` 读取币种池。
-
 通过 Freqtrade 下载 Binance futures 数据：
 
 
@@ -134,11 +124,40 @@ python -m alpha101.integrations.freqtrade \
   --timeframes 1h 4h 1d \
   --timerange 20260101-20260630
 ```
+默认下载`configs/alpha101.json`中的50个币种，可以自行修改配置。
+
+获取市值最大的前50个 Binance USDT 永续币种池：
+
+
+```bash
+python -m alpha101.data.universe \
+  --top-n 50 \
+  --output configs/pairs.binance-usdt-perp.json
+```
+结果输出到`configs/pairs.binance-usdt-perp.json`，可以复制到 `configs/alpha101.json` 的 `exchange.pair_whitelist` 中。
+
+
+## Web因子回测
+
+启动轻量研究服务：
+
+```bash
+alpha101-research-server
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:8001
+```
+
+研究服务用于快速输入表达式、查看因子表现、检查回测指标，适合做交互式因子筛选。
+
 
 
 ## 运行因子表达式
 
-安装后可以使用命令行入口：
+也可以使用命令行入口：
 
 ```bash
 alpha101-expression "ts_rank(close, 10)"
@@ -172,20 +191,3 @@ factor_search_results/<timeframe>/
 3. 用截面 forward return 计算 IC、收益、Sharpe、回撤等评分
 4. 通过遗传操作继续迭代表达式
 5. 保存每批搜索结果和汇总结果
-
-
-## 研究服务
-
-启动轻量研究服务：
-
-```bash
-alpha101-research-server
-```
-
-然后打开：
-
-```text
-http://127.0.0.1:8001
-```
-
-研究服务用于快速输入表达式、查看因子表现、检查回测指标，适合做交互式因子筛选。
