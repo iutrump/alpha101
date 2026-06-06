@@ -3,13 +3,14 @@
 [中文版](README.md)
 
 ![alpha101 overview](docs/assets/alpha101-overview.png)
+**Web Server**
 ![factor1 overview](docs/assets/factor1.png)
 
-<p align="center">
+<!-- <p align="center">
   <img src="docs/assets/factor1.png" alt="factor example 1" width="32%">
   <img src="docs/assets/factor2.png" alt="factor example 2" width="32%">
   <img src="docs/assets/factor3.png" alt="factor example 3" width="32%">
-</p>
+</p> -->
 `alpha101` is a factor research toolkit for cryptocurrency markets. It focuses on:
 
 - Genetic algorithm based factor mining

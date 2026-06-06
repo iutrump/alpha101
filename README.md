@@ -3,13 +3,14 @@
 [English version](README.en.md)
 
 ![alpha101 overview](docs/assets/alpha101-overview.png)
+**因子回测可视化**
 ![factor1 overview](docs/assets/factor1.png)
 
-<p align="center">
+<!-- <p align="center">
   <img src="docs/assets/factor1.png" alt="factor example 1" width="32%">
   <img src="docs/assets/factor2.png" alt="factor example 2" width="32%">
   <img src="docs/assets/factor3.png" alt="factor example 3" width="32%">
-</p>
+</p> -->
 `alpha101` 是一个面向加密货币市场的因子研究工具包，重点支持：
 
 - 基于遗传算法的因子挖掘
