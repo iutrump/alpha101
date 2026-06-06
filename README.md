@@ -3,7 +3,13 @@
 [English version](README.en.md)
 
 ![alpha101 overview](docs/assets/alpha101-overview.png)
+![factor1 overview](docs/assets/factor1.png)
 
+<p align="center">
+  <img src="docs/assets/factor1.png" alt="factor example 1" width="32%">
+  <img src="docs/assets/factor2.png" alt="factor example 2" width="32%">
+  <img src="docs/assets/factor3.png" alt="factor example 3" width="32%">
+</p>
 `alpha101` 是一个面向加密货币市场的因子研究工具包，重点支持：
 
 - 基于遗传算法的因子挖掘
@@ -191,3 +197,45 @@ factor_search_results/<timeframe>/
 3. 用截面 forward return 计算 IC、收益、Sharpe、回撤等评分
 4. 通过遗传操作继续迭代表达式
 5. 保存每批搜索结果和汇总结果
+
+
+
+## 数据字段、算子和语法
+
+表达式运行在宽表数据上，行是时间，列是交易对。当前可直接引用的数据字段包括：
+
+- `open`、`high`、`low`、`close`、`volume`、`vwap`：基础 OHLCV 和成交均价字段
+- `returns`：由 `close.pct_change()` 计算的收益率
+- `market_return`：市场收益率；如果有 `cap`，默认使用市值前 15 的币种加权，否则使用截面均值
+- `cap`：可选市值字段
+- `funding`：可选资金费率字段
+
+表达式可以使用 Python 风格的四则运算、比较运算和函数调用。运行时会把表达式转成小写，支持 `#` 行内注释和用分号分隔的临时变量：
+
+```text
+x = ts_delta(close, 1);
+y = ts_rank(volume, 10);
+rank(x / y)
+```
+
+常用内置函数包括 `abs`、`log`、`sign`、`sqrt`、`max`、`min`、`exp`。其中 `log` 是 signed log，`sqrt` 会对负数做安全处理。条件逻辑可以用 `if_else(condition, true_val, false_val)` 或 `trade_when(condition, alpha, exit)`。
+
+当前注册的核心算子如下：
+
+```text
+时序单输入:
+  ts_mean, ts_rank, ts_min, ts_max, ts_std_dev, ts_arg_max, ts_arg_min,
+  ts_sum, ts_product, ts_skewness, ts_kurtosis, ts_decay_linear,
+  ts_drawdown, ts_pos, ts_zscore, ts_ema, ts_slope
+
+时序双输入:
+  ts_corr, ts_covariance, ts_alpha, ts_r2, ts_beta, ts_resid
+
+截面:
+  rank, scale, zscore, winsorize
+
+滞后/变化:
+  ts_delay, ts_delta
+```
+
+表达式搜索生成器会从上述字段和算子中随机生成候选因子。生成规则默认包含 `+`、`-`、`*`、`/`，一元 `log`、`-`、`abs`、`sqrt`、`sign`，最大深度为 4，最多 8 个算子，并会避开部分低价值嵌套模式，例如 `ts_mean(ts_mean(...))`、`rank(rank(...))`、`ts_corr(ts_corr(...))`。

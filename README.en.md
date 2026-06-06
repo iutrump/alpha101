@@ -3,7 +3,13 @@
 [中文版](README.md)
 
 ![alpha101 overview](docs/assets/alpha101-overview.png)
+![factor1 overview](docs/assets/factor1.png)
 
+<p align="center">
+  <img src="docs/assets/factor1.png" alt="factor example 1" width="32%">
+  <img src="docs/assets/factor2.png" alt="factor example 2" width="32%">
+  <img src="docs/assets/factor3.png" alt="factor example 3" width="32%">
+</p>
 `alpha101` is a factor research toolkit for cryptocurrency markets. It focuses on:
 
 - Genetic algorithm based factor mining
@@ -13,6 +19,14 @@
 The project uses the open-source [Freqtrade](https://github.com/freqtrade/freqtrade) framework to download exchange OHLCV data. `alpha101` organizes local data into factor research panels, then runs expression evaluation, factor search, and backtesting on top of those panels.
 
 **This project is for learning and research only. It does not provide investment advice. Do not deploy mined factors directly in live trading.**
+
+## Factor Examples
+
+<p align="center">
+  <img src="docs/assets/factor1.png" alt="factor example 1" width="32%">
+  <img src="docs/assets/factor2.png" alt="factor example 2" width="32%">
+  <img src="docs/assets/factor3.png" alt="factor example 3" width="32%">
+</p>
 
 ## Project Layout
 
@@ -187,3 +201,44 @@ The factor search workflow is:
 3. Score factors with cross-sectional forward returns, IC, return, Sharpe, and drawdown metrics
 4. Continue iterating expressions through genetic operations
 5. Save batch results and summary outputs
+
+
+## Data Fields, Operators, and Syntax
+
+Expressions run on wide data frames where rows are timestamps and columns are trading pairs. The currently available fields are:
+
+- `open`, `high`, `low`, `close`, `volume`, `vwap`: base OHLCV and average price fields
+- `returns`: returns computed from `close.pct_change()`
+- `market_return`: market return; if `cap` is available, it uses a cap-weighted top-15 universe, otherwise it uses the cross-sectional mean
+- `cap`: optional market cap field
+- `funding`: optional funding-rate field
+
+Expressions use Python-style arithmetic, comparisons, and function calls. The runtime lowercases expression code, supports `#` inline comments, and supports semicolon-separated temporary variables:
+
+```text
+x = ts_delta(close, 1);
+y = ts_rank(volume, 10);
+rank(x / y)
+```
+
+Common built-in functions include `abs`, `log`, `sign`, `sqrt`, `max`, `min`, and `exp`. `log` is a signed log, and `sqrt` safely handles negative values. Conditional logic can use `if_else(condition, true_val, false_val)` or `trade_when(condition, alpha, exit)`.
+
+The core registered operators are:
+
+```text
+Single-input time-series:
+  ts_mean, ts_rank, ts_min, ts_max, ts_std_dev, ts_arg_max, ts_arg_min,
+  ts_sum, ts_product, ts_skewness, ts_kurtosis, ts_decay_linear,
+  ts_drawdown, ts_pos, ts_zscore, ts_ema, ts_slope
+
+Dual-input time-series:
+  ts_corr, ts_covariance, ts_alpha, ts_r2, ts_beta, ts_resid
+
+Cross-sectional:
+  rank, scale, zscore, winsorize
+
+Lag/change:
+  ts_delay, ts_delta
+```
+
+The expression search generator samples candidate factors from these fields and operators. Its default grammar includes `+`, `-`, `*`, `/`, unary `log`, `-`, `abs`, `sqrt`, and `sign`, with max depth 4 and at most 8 operators. It also avoids several low-value nesting patterns, such as `ts_mean(ts_mean(...))`, `rank(rank(...))`, and `ts_corr(ts_corr(...))`.
