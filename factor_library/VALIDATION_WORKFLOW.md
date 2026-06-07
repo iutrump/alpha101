@@ -32,12 +32,28 @@ python3 scripts/cross_validate_factor_candidates.py \
   --expression "ts_mean(zscore(volume), 28)"
 ```
 
+Frequency and forecast-horizon checks:
+
+```bash
+python3 scripts/cross_validate_factor_candidates.py \
+  --manifest factor_search_results/experiments/baseline_large_seed2/4h/20260607_141809/manifest.json \
+  --timeframe 1h \
+  --forward-periods 1 \
+  --forward-periods 4 \
+  --forward-periods 8 \
+  --out-dir factor_validation_results/one_hour_core_20260607 \
+  --expression "-ts_mean(zscore(volume), 28)" \
+  --expression "ts_product(zscore(volume), 28)"
+```
+
 The script checks:
 
 - six chronological folds;
 - three deterministic universe splits;
 - full-window Sharpe, returns, IC IR, turnover, and drawdown;
 - high-correlation clusters among candidates.
+
+When `--forward-periods` is greater than 1, the target return windows overlap. Treat the result as a horizon-sensitivity check, not as a directly comparable Sharpe against the one-bar horizon.
 
 ## 3. Detailed Backtest And Exposure
 

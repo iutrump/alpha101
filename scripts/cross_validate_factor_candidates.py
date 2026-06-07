@@ -47,6 +47,14 @@ def main() -> None:
     parser.add_argument("--time-folds", type=int, default=6)
     parser.add_argument("--universe-folds", type=int, default=3)
     parser.add_argument("--corr-threshold", type=float, default=0.90)
+    parser.add_argument("--timeframe", type=str, default=None, help="Override config timeframe, e.g. 1h or 4h.")
+    parser.add_argument(
+        "--forward-periods",
+        type=int,
+        action="append",
+        default=None,
+        help="Override forecast horizon in bars. Can be passed multiple times.",
+    )
     parser.add_argument(
         "--expression",
         action="append",
@@ -77,6 +85,8 @@ def main() -> None:
     candidates = _dedupe_candidates(candidates)
 
     cfg = get_config(args.config)
+    if args.timeframe is not None:
+        cfg.timeframe = args.timeframe
     wide = build_research_wide_frame(
         cfg.pairs,
         cfg.lookback_days,
@@ -90,21 +100,25 @@ def main() -> None:
         run_end = pd.to_datetime(manifest["date_end"], utc=True)
         wide = wide.loc[wide.index <= run_end]
 
-    records, corr_clusters = cross_validate(
-        candidates,
-        wide,
-        manifest=manifest,
-        time_folds=args.time_folds,
-        universe_folds=args.universe_folds,
-        corr_threshold=args.corr_threshold,
-    )
+    forward_periods_values = args.forward_periods or [int(manifest.get("forward_periods", 1))]
+    for forward_periods in forward_periods_values:
+        run_manifest = {**manifest, "forward_periods": int(forward_periods)}
+        records, corr_clusters = cross_validate(
+            candidates,
+            wide,
+            manifest=run_manifest,
+            time_folds=args.time_folds,
+            universe_folds=args.universe_folds,
+            corr_threshold=args.corr_threshold,
+        )
 
-    csv_path = out_dir / "cross_validation_candidates.csv"
-    md_path = out_dir / "cross_validation_report.md"
-    _write_candidates_csv(csv_path, records)
-    _write_report(md_path, summary_path, wide, records, corr_clusters)
-    print(f"Wrote {csv_path}")
-    print(f"Wrote {md_path}")
+        suffix = "" if len(forward_periods_values) == 1 else f"_fp{forward_periods}"
+        csv_path = out_dir / f"cross_validation_candidates{suffix}.csv"
+        md_path = out_dir / f"cross_validation_report{suffix}.md"
+        _write_candidates_csv(csv_path, records)
+        _write_report(md_path, summary_path, wide, records, corr_clusters, run_manifest)
+        print(f"Wrote {csv_path}")
+        print(f"Wrote {md_path}")
 
 
 def cross_validate(
@@ -395,6 +409,7 @@ def _write_report(
     wide: pd.DataFrame,
     records: list[dict[str, Any]],
     corr_clusters: list[list[str]],
+    manifest: dict[str, Any],
 ) -> None:
     expression_to_record = {record["expression"]: record for record in records}
     lines = [
@@ -403,7 +418,8 @@ def _write_report(
         f"Source: `{summary_path}`" if summary_path else "Source: manual expressions",
         (
             f"Data: {wide.index.min()} to {wide.index.max()}, "
-            f"{len(wide)} bars, {wide['close'].shape[1]} symbols"
+            f"{len(wide)} bars, {wide['close'].shape[1]} symbols, "
+            f"forward_periods={int(manifest.get('forward_periods', 1))}"
         ),
         "",
         "## Decisions",

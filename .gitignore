@@ -29,6 +29,7 @@ user_data/logs/
 user_data/backtest_results/
 cache_cap_data/
 factor_search_results/
+factor_validation_results/
 downloads/
 
 # Notebooks
