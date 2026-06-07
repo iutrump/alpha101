@@ -18,15 +18,31 @@ Accepted factors must have positive original test performance, survive most or a
 
 ## Accepted Factors
 
+### `volume_zscore_mean_neg_28`
+
+```text
+-ts_mean(zscore(volume), 28)
+```
+
+Explanation: low relative-volume preference. `zscore(volume)` measures each coin's volume intensity versus the cross-section at each bar; the 28-bar mean smooths that state; the negative sign ranks quieter, less crowded names higher and recent high-volume names lower.
+
+This is the preferred interpretable replacement for the raw genetic-search expression `ts_product(zscore(volume), 28)`. Manual validation showed:
+
+- `ts_mean(zscore(volume), 28)` and `ts_sum(zscore(volume), 28)` were consistently negative.
+- `-ts_mean(zscore(volume), 28)` passed all six time folds and all three universe folds.
+- `alpha101-expression --exposure --market-beta "-ts_mean(zscore(volume), 28)"` reported Sharpe after cost 2.595, IC IR 0.109, and annual returns after cost 56.133%.
+
+Risk: this is not a pure alpha. The detailed exposure check showed strong positive size exposure and strong negative liquidity exposure. Treat it as a liquidity/crowding factor and neutralize or cap style exposure before production.
+
 ### `vol_zscore_product_28`
 
 ```text
 ts_product(zscore(volume), 28)
 ```
 
-Explanation: cross-sectional volume pressure persistence. It favors names whose volume has stayed high versus peers over the recent window. In this run it was the most stable candidate: all six time folds were positive and all three universe splits were strongly positive.
+Explanation: persistent same-sign volume regime. Because `zscore(volume)` can be positive or negative and the window length is even, this expression can be high when volume is persistently far from the cross-sectional mean, including persistently quiet names. It is therefore better understood as a nonlinear volume-regime detector than as a clean "high volume continuation" factor.
 
-Risk: the expression is mathematically awkward because `zscore(volume)` can be negative, and a product over 28 bars can flip sign or create large magnitudes. Before production, inspect the raw value distribution and consider replacing it with a more interpretable proxy such as a rolling sum/mean of `zscore(volume)`.
+Risk: the expression is mathematically awkward because a product over 28 signed z-scores can flip sign or create large magnitudes. Keep it as a search-discovered reference, but prefer `volume_zscore_mean_neg_28` for a clean library factor unless the nonlinear product shows incremental residual IC.
 
 ### `volume_low_alpha_min_21_30`
 

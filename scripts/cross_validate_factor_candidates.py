@@ -39,7 +39,7 @@ NUMERIC_COLUMNS = (
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cross-validate mined factor candidates.")
-    parser.add_argument("summary_csv", type=Path, help="Path to a factor search summary.csv")
+    parser.add_argument("summary_csv", type=Path, nargs="?", help="Path to a factor search summary.csv")
     parser.add_argument("--config", type=Path, default=Path("configs/alpha101.json"))
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, default=None)
@@ -47,16 +47,34 @@ def main() -> None:
     parser.add_argument("--time-folds", type=int, default=6)
     parser.add_argument("--universe-folds", type=int, default=3)
     parser.add_argument("--corr-threshold", type=float, default=0.90)
+    parser.add_argument(
+        "--expression",
+        action="append",
+        default=None,
+        help="Manual expression to validate. Can be passed multiple times.",
+    )
+    parser.add_argument(
+        "--expressions-file",
+        type=Path,
+        default=None,
+        help="CSV or text file of manual expressions. CSV columns: name,expression. Text: one expression per line.",
+    )
     args = parser.parse_args()
 
     summary_path = args.summary_csv
-    manifest_path = args.manifest or summary_path.with_name("manifest.json")
-    out_dir = args.out_dir or summary_path.parent
+    if summary_path is None and not args.expression and args.expressions_file is None:
+        raise SystemExit("Provide summary_csv, --expression, or --expressions-file")
+    manifest_path = args.manifest or (summary_path.with_name("manifest.json") if summary_path else None)
+    out_dir = args.out_dir or (summary_path.parent if summary_path else Path("factor_validation_results"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest = _load_manifest(manifest_path)
-    rows = _load_success_rows(summary_path)
-    candidates = _select_candidates(rows, max_candidates=args.max_candidates)
+    manifest = _load_manifest(manifest_path) if manifest_path else {}
+    candidates: list[dict[str, Any]] = []
+    if summary_path is not None:
+        rows = _load_success_rows(summary_path)
+        candidates.extend(_select_candidates(rows, max_candidates=args.max_candidates))
+    candidates.extend(_load_manual_candidates(args.expression or [], args.expressions_file))
+    candidates = _dedupe_candidates(candidates)
 
     cfg = get_config(args.config)
     wide = build_research_wide_frame(
@@ -186,6 +204,51 @@ def _select_candidates(rows: list[dict[str, Any]], *, max_candidates: int) -> li
     return list(selected.values())
 
 
+def _load_manual_candidates(expressions: list[str], path: Path | None) -> list[dict[str, Any]]:
+    candidates = []
+    for idx, expression in enumerate(expressions, start=1):
+        candidates.append(_manual_candidate(f"manual_{idx:03d}", expression))
+    if path is None:
+        return candidates
+
+    if path.suffix.lower() == ".csv":
+        with path.open(newline="", encoding="utf-8") as handle:
+            for idx, row in enumerate(csv.DictReader(handle), start=1):
+                expression = (row.get("expression") or "").strip()
+                if not expression:
+                    continue
+                name = (row.get("name") or row.get("factor_name") or f"manual_file_{idx:03d}").strip()
+                candidates.append(_manual_candidate(name, expression))
+        return candidates
+
+    with path.open(encoding="utf-8") as handle:
+        for idx, line in enumerate(handle, start=1):
+            expression = line.strip()
+            if not expression or expression.startswith("#"):
+                continue
+            candidates.append(_manual_candidate(f"manual_file_{idx:03d}", expression))
+    return candidates
+
+
+def _manual_candidate(name: str, expression: str) -> dict[str, Any]:
+    return {
+        "factor_name": name,
+        "expression": expression,
+        "train_sharpe": np.nan,
+        "valid_sharpe": np.nan,
+        "test_sharpe": np.nan,
+        "test_ic_ir": np.nan,
+        "complexity_score": np.nan,
+    }
+
+
+def _dedupe_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        deduped.setdefault(candidate["expression"], candidate)
+    return list(deduped.values())
+
+
 def _robust_summary_candidate(row: dict[str, Any]) -> bool:
     return (
         row["valid_sharpe"] > 1
@@ -197,6 +260,23 @@ def _robust_summary_candidate(row: dict[str, Any]) -> bool:
 
 
 def _decision(record: dict[str, Any], universe_folds: int) -> str:
+    if np.isnan(record["summary_test_sharpe"]) or np.isnan(record["summary_valid_sharpe"]):
+        if (
+            record["time_pos_folds"] >= 5
+            and record["universe_pos_groups"] == universe_folds
+            and record["time_median_sharpe"] > 1.0
+            and record["universe_min_sharpe"] > 0
+            and record["full_sharpe"] >= 2.0
+        ):
+            return "accepted_candidate"
+        if (
+            record["time_pos_folds"] >= 4
+            and record["universe_pos_groups"] >= max(1, universe_folds - 1)
+            and record["time_median_sharpe"] > 0
+        ):
+            return "watchlist"
+        return "rejected"
+
     if (
         record["summary_test_sharpe"] >= 1.0
         and record["summary_valid_sharpe"] >= 1.0
@@ -311,7 +391,7 @@ def _write_candidates_csv(path: Path, records: list[dict[str, Any]]) -> None:
 
 def _write_report(
     path: Path,
-    summary_path: Path,
+    summary_path: Path | None,
     wide: pd.DataFrame,
     records: list[dict[str, Any]],
     corr_clusters: list[list[str]],
@@ -320,7 +400,7 @@ def _write_report(
     lines = [
         "# Cross Validation Report",
         "",
-        f"Source: `{summary_path}`",
+        f"Source: `{summary_path}`" if summary_path else "Source: manual expressions",
         (
             f"Data: {wide.index.min()} to {wide.index.max()}, "
             f"{len(wide)} bars, {wide['close'].shape[1]} symbols"
