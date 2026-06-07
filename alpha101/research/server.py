@@ -19,6 +19,9 @@ app = FastAPI(title="Alpha101 Factor Research Server", version="1.0.0")
 
 _context_lock = threading.Lock()
 _context: dict[str, Any] | None = None
+_factor_view_lock = threading.Lock()
+_factor_view: dict[str, Any] | None = None
+_factor_view_seq = 0
 
 
 class BacktestRequest(BaseModel):
@@ -56,6 +59,77 @@ def get_context() -> dict[str, Any]:
     return _context
 
 
+def _json_float(value) -> float | None:
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def _json_int(value) -> int | None:
+    if pd.isna(value):
+        return None
+    return int(value)
+
+
+def _build_factor_view(wide_data: pd.DataFrame, raw_factor: pd.DataFrame) -> dict[str, Any]:
+    global _factor_view, _factor_view_seq
+    symbols = [
+        symbol
+        for symbol in raw_factor.columns
+        if all((field, symbol) in wide_data.columns for field in ("open", "high", "low", "close"))
+    ]
+    raw_factor = raw_factor.reindex(columns=symbols)
+    ranks = raw_factor.rank(axis=1, method="min", ascending=False, na_option="keep")
+    totals = raw_factor.notna().sum(axis=1)
+    valid_dates = raw_factor.dropna(how="all").index
+    latest_date = valid_dates[-1] if len(valid_dates) else raw_factor.index[-1]
+
+    summary = []
+    latest_raw = raw_factor.loc[latest_date]
+    latest_rank = ranks.loc[latest_date]
+    latest_total = int(totals.loc[latest_date])
+    for symbol in symbols:
+        summary.append(
+            {
+                "symbol": symbol,
+                "date": str(latest_date),
+                "raw_factor": _json_float(latest_raw.get(symbol)),
+                "rank": _json_int(latest_rank.get(symbol)),
+                "total": latest_total,
+            }
+        )
+    summary.sort(key=lambda item: (item["rank"] is None, item["rank"] or 10**9, item["symbol"]))
+
+    with _factor_view_lock:
+        _factor_view_seq += 1
+        run_id = _factor_view_seq
+        view = {
+            "run_id": run_id,
+            "latest_date": str(latest_date),
+            "symbols": summary,
+            "wide_data": wide_data,
+            "raw_factor": raw_factor,
+            "ranks": ranks,
+            "totals": totals,
+        }
+        _factor_view = view
+    return {
+        "run_id": run_id,
+        "latest_date": str(latest_date),
+        "symbols": summary,
+    }
+
+
+def _get_factor_view(run_id: int | None = None) -> dict[str, Any]:
+    with _factor_view_lock:
+        view = _factor_view
+    if view is None:
+        raise HTTPException(status_code=404, detail="no factor view is available; run a backtest first")
+    if run_id is not None and int(run_id) != int(view["run_id"]):
+        raise HTTPException(status_code=404, detail="factor view has expired; run the backtest again")
+    return view
+
+
 def _load_index_html() -> str:
     from importlib.resources import files
 
@@ -91,6 +165,7 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
         factor_wide = engine.evaluate(expression)
         factor_wide.index.name = "date"
         factor_wide.columns.name = "symbol"
+        factor_view = _build_factor_view(wide_data, factor_wide)
         factor_df = process_factor_wide_format(factor_wide)
         factor_name = "alpha_test"
         factor_df.columns = pd.MultiIndex.from_product([[factor_name], factor_df.columns])
@@ -131,6 +206,53 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
         },
         "metrics": metrics,
         "curve": curve_df.to_dict(orient="records"),
+        "factor_view": factor_view,
+    }
+
+
+@app.get("/api/factor-detail/{symbol}")
+def factor_detail(symbol: str, run_id: int | None = None) -> dict[str, Any]:
+    view = _get_factor_view(run_id)
+    raw_factor: pd.DataFrame = view["raw_factor"]
+    if symbol not in raw_factor.columns:
+        raise HTTPException(status_code=404, detail=f"symbol not found: {symbol}")
+
+    wide_data: pd.DataFrame = view["wide_data"]
+    ranks: pd.DataFrame = view["ranks"]
+    totals: pd.Series = view["totals"]
+    frame = pd.DataFrame(
+        {
+            "open": wide_data[("open", symbol)].reindex(raw_factor.index),
+            "high": wide_data[("high", symbol)].reindex(raw_factor.index),
+            "low": wide_data[("low", symbol)].reindex(raw_factor.index),
+            "close": wide_data[("close", symbol)].reindex(raw_factor.index),
+            "raw_factor": raw_factor[symbol],
+            "rank": ranks[symbol],
+            "total": totals,
+        }
+    )
+    frame = frame.dropna(how="all", subset=["open", "high", "low", "close", "raw_factor"])
+
+    rows = []
+    for dt, row in frame.iterrows():
+        rows.append(
+            {
+                "date": str(dt),
+                "open": _json_float(row["open"]),
+                "high": _json_float(row["high"]),
+                "low": _json_float(row["low"]),
+                "close": _json_float(row["close"]),
+                "raw_factor": _json_float(row["raw_factor"]),
+                "rank": _json_int(row["rank"]),
+                "total": _json_int(row["total"]),
+            }
+        )
+
+    return {
+        "run_id": int(view["run_id"]),
+        "symbol": symbol,
+        "latest_date": view["latest_date"],
+        "rows": rows,
     }
 
 

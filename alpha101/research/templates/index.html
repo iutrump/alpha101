@@ -19,7 +19,19 @@
     #status { margin-top:10px; min-height:20px; font-size:13px; color:var(--soft); } #chart { width:100%; height:620px; }
     .metrics { margin-top:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .metric { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px; } .metric .k { color:var(--soft); font-size:12px; } .metric .v { font-size:15px; font-weight:600; margin-top:4px; }
-    @media (max-width:980px){ .app { grid-template-columns:1fr; } #chart { height:420px; } }
+    .factor-panel { grid-column:1 / -1; }
+    .factor-browser { display:grid; grid-template-columns:260px minmax(0,1fr); gap:12px; min-height:560px; }
+    .symbol-list { border:1px solid var(--line); border-radius:10px; background:#fff; max-height:640px; overflow:auto; }
+    .symbol-item { width:100%; border:0; border-bottom:1px solid var(--line); border-radius:0; padding:10px 12px; background:#fff; color:var(--ink); display:grid; grid-template-columns:1fr auto; gap:4px 8px; text-align:left; cursor:pointer; }
+    .symbol-item:hover,.symbol-item.active { background:#fff0df; }
+    .symbol-item .symbol { font-weight:700; }
+    .symbol-item .rank { color:var(--accent); font-weight:700; }
+    .symbol-item .factor { grid-column:1 / -1; color:var(--soft); font-size:12px; }
+    .detail-head { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; min-height:30px; margin-bottom:8px; }
+    .detail-head .title { font-size:18px; font-weight:800; }
+    .detail-head .value { color:var(--soft); font-size:13px; }
+    #factorChart { width:100%; height:620px; }
+    @media (max-width:980px){ .app { grid-template-columns:1fr; } #chart { height:420px; } .factor-browser { grid-template-columns:1fr; } .symbol-list { max-height:260px; } #factorChart { height:520px; } }
     @media (max-width:420px){ .control-row { grid-template-columns:auto 1fr; } }
   </style>
 </head>
@@ -48,6 +60,17 @@
       <div id="metrics" class="metrics"></div>
     </section>
     <section class="panel"><div id="chart"></div></section>
+    <section class="panel factor-panel">
+      <h1>Symbol Factor Detail</h1>
+      <div class="muted">Select a symbol to inspect candles, raw factor values, and cross-sectional rank for the latest run.</div>
+      <div class="factor-browser">
+        <aside id="symbolList" class="symbol-list"></aside>
+        <div>
+          <div id="detailHead" class="detail-head"></div>
+          <div id="factorChart"></div>
+        </div>
+      </div>
+    </section>
   </div>
   <script>
     const runBtn = document.getElementById("runBtn");
@@ -58,8 +81,14 @@
     const leverageEl = document.getElementById("leverage");
     const longGroupEl = document.getElementById("longGroup");
     const shortGroupEl = document.getElementById("shortGroup");
+    const symbolListEl = document.getElementById("symbolList");
+    const detailHeadEl = document.getElementById("detailHead");
+    let factorRunId = null;
+    let selectedSymbol = null;
     const pct = v => `${(v * 100).toFixed(2)}%`;
     const num = v => Number(v).toFixed(4);
+    const maybeNum = v => v === null || v === undefined || Number.isNaN(Number(v)) ? "N/A" : Number(v).toFixed(6);
+    const rankText = item => item.rank ? `${item.rank}/${item.total}` : `-/${item.total || "-"}`;
     function renderMetrics(m){ const items=[["Sharpe",num(m.sharpe)],["Sharpe (After Cost)",num(m.sharpe_after_cost)],["CAGR",pct(m.cagr)],["CAGR (After Cost)",pct(m.cagr_after_cost)],["Annual Returns",pct(m.returns)],["Annual Returns (After Cost)",pct(m.returns_after_cost)],["Annual Cost Drag",pct(m.annual_cost_drag)],["Funding (Annualized)",pct(m.funding_annual)],["Max Drawdown",pct(m.drawdown)],["Win Rate",pct(m.win_rate)],["Turnover",pct(m.turnover)],["Margin",num(m.margin)],["Margin (After Cost)",num(m.margin_after_cost)],["Single Fee",pct(m.single_side_fee)],["Round-Trip Fee",pct(m.round_trip_fee)],["Avg Long Funding",pct(m.avg_long_funding)],["Avg Short Funding",pct(m.avg_short_funding)],["IC Mean",num(m.ic_mean)],["IC IR",num(m.ic_ir)],["Observations",String(m.obs_count)],["Symbols",String(m.symbols)]];
       metricsEl.innerHTML=items.map(([k,v])=>`<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`).join(""); }
     function renderChart(curve, nQuintiles, longGroup, shortGroup){
@@ -90,6 +119,79 @@
       });
       Plotly.newPlot("chart",traces,{margin:{l:45,r:20,t:10,b:40},paper_bgcolor:"#fffaf1",plot_bgcolor:"#fff",xaxis:{gridcolor:"#efe4d8"},yaxis:{gridcolor:"#efe4d8",title:"Equity"}},{responsive:true,displaylogo:false});
     }
+    function renderSymbolList(view){
+      factorRunId = view.run_id;
+      const symbols = view.symbols || [];
+      if(!symbols.length){
+        symbolListEl.innerHTML = `<div class="muted" style="padding:12px;">No factor values available.</div>`;
+        detailHeadEl.innerHTML = "";
+        Plotly.purge("factorChart");
+        return;
+      }
+      selectedSymbol = selectedSymbol && symbols.some(item => item.symbol === selectedSymbol) ? selectedSymbol : symbols[0].symbol;
+      symbolListEl.innerHTML = symbols.map(item => `
+        <button class="symbol-item ${item.symbol === selectedSymbol ? "active" : ""}" data-symbol="${item.symbol}">
+          <span class="symbol">${item.symbol}</span>
+          <span class="rank">${rankText(item)}</span>
+          <span class="factor">raw ${maybeNum(item.raw_factor)} · ${item.date}</span>
+        </button>
+      `).join("");
+      for(const button of symbolListEl.querySelectorAll(".symbol-item")){
+        button.addEventListener("click", () => loadFactorDetail(button.dataset.symbol));
+      }
+      loadFactorDetail(selectedSymbol);
+    }
+    async function loadFactorDetail(symbol){
+      if(!symbol || !factorRunId) return;
+      selectedSymbol = symbol;
+      for(const button of symbolListEl.querySelectorAll(".symbol-item")){
+        button.classList.toggle("active", button.dataset.symbol === symbol);
+      }
+      detailHeadEl.innerHTML = `<span class="title">${symbol}</span><span class="value">Loading detail...</span>`;
+      try {
+        const resp = await fetch(`/api/factor-detail/${encodeURIComponent(symbol)}?run_id=${factorRunId}`);
+        const data = await resp.json();
+        if(!resp.ok){ throw new Error(data.detail || "Failed to load factor detail"); }
+        renderFactorDetail(data);
+      } catch(err) {
+        detailHeadEl.innerHTML = `<span class="title">${symbol}</span><span class="value">Failed: ${err.message}</span>`;
+        Plotly.purge("factorChart");
+      }
+    }
+    function renderFactorDetail(data){
+      const rows = data.rows || [];
+      if(!rows.length){
+        detailHeadEl.innerHTML = `<span class="title">${data.symbol}</span><span class="value">No rows available.</span>`;
+        Plotly.purge("factorChart");
+        return;
+      }
+      const latest = [...rows].reverse().find(row => row.raw_factor !== null || row.close !== null) || rows[rows.length - 1];
+      detailHeadEl.innerHTML = `
+        <span class="title">${data.symbol}</span>
+        <span class="value">date ${latest.date}</span>
+        <span class="value">raw ${maybeNum(latest.raw_factor)}</span>
+        <span class="value">rank ${latest.rank ? `${latest.rank}/${latest.total}` : `-/${latest.total || "-"}`}</span>
+      `;
+      const x = rows.map(row => row.date);
+      const traces = [
+        { x, open:rows.map(row=>row.open), high:rows.map(row=>row.high), low:rows.map(row=>row.low), close:rows.map(row=>row.close), type:"candlestick", name:"K line", increasing:{line:{color:"#1d6e45"}}, decreasing:{line:{color:"#be4f2e"}} },
+        { x, y:rows.map(row=>row.raw_factor), mode:"lines", name:"Raw factor", yaxis:"y2", line:{color:"#2f5caa",width:1.6} },
+        { x, y:rows.map(row=>row.rank), mode:"lines", name:"Cross rank", yaxis:"y3", line:{color:"#8d5a13",width:1.3,dash:"dot"} }
+      ];
+      const visibleWindow = Math.min(180, rows.length);
+      const rangeStart = rows[Math.max(0, rows.length - visibleWindow)]?.date;
+      const rangeEnd = rows[rows.length - 1]?.date;
+      Plotly.newPlot("factorChart", traces, {
+        margin:{l:55,r:65,t:10,b:45},
+        paper_bgcolor:"#fffaf1",
+        plot_bgcolor:"#fff",
+        xaxis:{gridcolor:"#efe4d8",rangeslider:{visible:true},range:rangeStart && rangeEnd ? [rangeStart, rangeEnd] : undefined},
+        yaxis:{gridcolor:"#efe4d8",title:"K line",domain:[0.34,1]},
+        yaxis2:{gridcolor:"#f3eadf",title:"Raw factor",domain:[0.16,0.30],anchor:"x"},
+        yaxis3:{gridcolor:"#f3eadf",title:"Rank",domain:[0,0.12],anchor:"x",autorange:"reversed"},
+        legend:{orientation:"h",y:1.05,x:0}
+      }, {responsive:true,displaylogo:false});
+    }
     function syncGroupInputs(){
       const nQuintiles = Number(nqEl.value) || 5;
       longGroupEl.max = String(nQuintiles);
@@ -109,7 +211,7 @@
       if(!expression){ statusEl.textContent="Please enter an expression"; return; }
       runBtn.disabled=true; statusEl.textContent="Running, please wait..."; metricsEl.innerHTML="";
       try { const resp=await fetch("/api/backtest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expression,n_quintiles,leverage,long_group,short_group})});
-        const data=await resp.json(); if(!resp.ok){ throw new Error(data.detail || "Backtest failed"); } renderMetrics(data.metrics); renderChart(data.curve, n_quintiles, data.config.long_group, data.config.short_group);
+        const data=await resp.json(); if(!resp.ok){ throw new Error(data.detail || "Backtest failed"); } renderMetrics(data.metrics); renderChart(data.curve, n_quintiles, data.config.long_group, data.config.short_group); renderSymbolList(data.factor_view);
         statusEl.textContent=`Done: ${data.config.test_start_date} ~ ${data.config.test_end_date}, ${data.curve.length} points`;
       } catch(err) { statusEl.textContent=`Failed: ${err.message}`; } finally { runBtn.disabled=false; }
     }
