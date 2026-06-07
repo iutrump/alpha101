@@ -28,6 +28,11 @@ class SearchResultStore:
         json_path.write_text(json.dumps(rounded_results, indent=2, default=str), encoding="utf-8")
         self.all_results.extend(results)
 
+    def save_manifest(self, manifest: dict) -> Path:
+        manifest_path = self.output_dir / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
+        return manifest_path
+
     def summarize(self, normalize_expression) -> None:
         if not self.all_results:
             print("No results to summarize")

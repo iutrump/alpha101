@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import random
+
+import numpy as np
 
 from alpha101.config import get_config
 from alpha101.data import build_research_wide_frame
@@ -19,7 +22,12 @@ def main() -> None:
     parser.add_argument("--backend", type=str, default="auto", choices=["auto", "process", "serial"])
     parser.add_argument("--n-jobs", type=int, default=None, help="Parallel workers for batch expression evaluation.")
     parser.add_argument("--profile", action="store_true", help="Print per-generation timing breakdown.")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducible factor generation.")
     args = parser.parse_args()
+
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
 
     cfg = get_config(args.config)
     wide_data = build_research_wide_frame(
@@ -39,7 +47,9 @@ def main() -> None:
         forward_periods=args.forward_periods,
         transaction_cost=cfg.round_trip_fee,
         segment_ratios=cfg.search_segment_ratios,
+        seed=args.seed,
     )
+    search_engine.save_manifest(cli_args=vars(args))
 
     search_engine.genetic_search(
         population_size=args.population,

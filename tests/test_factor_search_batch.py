@@ -20,3 +20,12 @@ def test_factor_search_batch_evaluates_population():
     assert set(results) == {"alpha_a", "alpha_b"}
     assert all(metrics["status"] == "success" for metrics in results.values())
     assert all("fitness" in metrics for metrics in results.values())
+
+
+def test_factor_search_seed_reproduces_first_expression():
+    first_engine = FactorSearchEngine(make_wide_data(), n_quantiles=2, seed=7)
+    first_expression = first_engine.new_random_expression()
+
+    second_engine = FactorSearchEngine(make_wide_data(), n_quantiles=2, seed=7)
+
+    assert first_expression == second_engine.new_random_expression()

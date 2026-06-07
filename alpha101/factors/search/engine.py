@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -35,14 +36,16 @@ class FactorSearchEngine:
         forward_periods: int = 1,
         transaction_cost: float | None = None,
         segment_ratios: tuple[float, float, float] | list[float] | None = None,
+        seed: int | None = None,
     ):
         self.wide_data = wide_data
         self.alpha_obj = FactorDataView(wide_data)
         self.engine = FastExpressionEngine(self.alpha_obj)
-        self.generator = FactorGenerator()
+        self.generator = FactorGenerator(seed=seed)
         self.results = SearchResultStore(output_dir, timeframe)
         self.n_quantiles = n_quantiles
         self.forward_periods = forward_periods
+        self.seed = seed
         cfg = get_config()
         self.transaction_cost = float(cfg.round_trip_fee if transaction_cost is None else transaction_cost)
         raw_segment_ratios = cfg.search_segment_ratios if segment_ratios is None else segment_ratios
@@ -52,6 +55,24 @@ class FactorSearchEngine:
         self.max_complexity = 36.0
         self.min_obs = 30
         self._metrics_executor: ProcessPoolExecutor | None = None
+
+    def save_manifest(self, *, cli_args: dict | None = None) -> None:
+        manifest = {
+            "created_at": datetime.now().isoformat(),
+            "git": _git_context(),
+            "output_dir": str(self.results.output_dir),
+            "seed": self.seed,
+            "n_quantiles": self.n_quantiles,
+            "forward_periods": self.forward_periods,
+            "transaction_cost": self.transaction_cost,
+            "segment_ratios": self.segment_ratios,
+            "symbols": list(self.wide_data["close"].columns),
+            "date_start": str(self.wide_data.index.min()),
+            "date_end": str(self.wide_data.index.max()),
+            "rows": int(len(self.wide_data)),
+            "cli_args": cli_args or {},
+        }
+        self.results.save_manifest(manifest)
 
     def normalize_expression(self, expr: str) -> str:
         try:
@@ -373,3 +394,17 @@ def _cpu_count() -> int:
         return os.cpu_count() or 1
     except Exception:
         return 1
+
+
+def _git_context() -> dict[str, str | None]:
+    def run_git(args: list[str]) -> str | None:
+        try:
+            return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL).strip()
+        except Exception:
+            return None
+
+    return {
+        "branch": run_git(["branch", "--show-current"]),
+        "commit": run_git(["rev-parse", "HEAD"]),
+        "dirty": run_git(["status", "--short"]),
+    }
