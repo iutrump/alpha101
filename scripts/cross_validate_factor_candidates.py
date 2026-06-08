@@ -12,6 +12,7 @@ import pandas as pd
 
 from alpha101.config import get_config
 from alpha101.data import FactorDataView, build_research_wide_frame
+from alpha101.factors.evaluation import StyleConfig, build_style_factors, residualize_style_factor
 from alpha101.factors.evaluation.scoring import _score_factor_segment, forward_returns
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.operator_lib import process_factor_wide_format
@@ -48,6 +49,18 @@ def main() -> None:
     parser.add_argument("--universe-folds", type=int, default=3)
     parser.add_argument("--corr-threshold", type=float, default=0.90)
     parser.add_argument("--timeframe", type=str, default=None, help="Override config timeframe, e.g. 1h or 4h.")
+    parser.add_argument(
+        "--specific",
+        action="store_true",
+        help="Validate style-neutral residual factors instead of raw factors.",
+    )
+    parser.add_argument("--momentum-window", type=int, default=20)
+    parser.add_argument("--volatility-window", type=int, default=20)
+    parser.add_argument("--beta-window", type=int, default=60)
+    parser.add_argument("--liquidity-window", type=int, default=20)
+    parser.add_argument("--reversal-window", type=int, default=5)
+    parser.add_argument("--funding-window", type=int, default=3)
+    parser.add_argument("--style-min-count", type=int, default=8)
     parser.add_argument(
         "--forward-periods",
         type=int,
@@ -110,9 +123,24 @@ def main() -> None:
             time_folds=args.time_folds,
             universe_folds=args.universe_folds,
             corr_threshold=args.corr_threshold,
+            specific=args.specific,
+            style_config=StyleConfig(
+                momentum_window=args.momentum_window,
+                volatility_window=args.volatility_window,
+                beta_window=args.beta_window,
+                liquidity_window=args.liquidity_window,
+                reversal_window=args.reversal_window,
+                funding_window=args.funding_window,
+                min_count=args.style_min_count,
+            ),
         )
 
-        suffix = "" if len(forward_periods_values) == 1 else f"_fp{forward_periods}"
+        suffix_parts = []
+        if len(forward_periods_values) > 1:
+            suffix_parts.append(f"fp{forward_periods}")
+        if args.specific:
+            suffix_parts.append("specific")
+        suffix = "" if not suffix_parts else "_" + "_".join(suffix_parts)
         csv_path = out_dir / f"cross_validation_candidates{suffix}.csv"
         md_path = out_dir / f"cross_validation_report{suffix}.md"
         _write_candidates_csv(csv_path, records)
@@ -129,6 +157,8 @@ def cross_validate(
     time_folds: int,
     universe_folds: int,
     corr_threshold: float,
+    specific: bool = False,
+    style_config: StyleConfig | None = None,
 ) -> tuple[list[dict[str, Any]], list[list[str]]]:
     close = wide["close"]
     columns = list(close.columns)
@@ -138,6 +168,23 @@ def cross_validate(
 
     engine = FastExpressionEngine(FactorDataView(wide))
     target = forward_returns(close, periods=forward_periods)
+    style_config = style_config or StyleConfig()
+    styles = None
+    if specific:
+        view = FactorDataView(wide)
+        styles = build_style_factors(
+            view.close.reindex(columns=columns),
+            view.cap.reindex(columns=columns) if view.cap is not None else None,
+            view.market_return.reindex(columns=columns),
+            view.volume.reindex(columns=columns),
+            view.funding.reindex(columns=columns) if view.funding is not None else None,
+            momentum_window=style_config.momentum_window,
+            volatility_window=style_config.volatility_window,
+            beta_window=style_config.beta_window,
+            liquidity_window=style_config.liquidity_window,
+            reversal_window=style_config.reversal_window,
+            funding_window=style_config.funding_window,
+        )
     time_splits = _time_splits(wide.index, time_folds)
     universe_splits = _universe_splits(columns, universe_folds)
 
@@ -160,6 +207,8 @@ def cross_validate(
         expression = candidate["expression"]
         raw_factor = engine.evaluate(expression)
         factor = process_factor_wide_format(raw_factor).reindex(index=wide.index, columns=columns)
+        if specific:
+            factor = residualize_style_factor(factor, styles or {}, config=style_config)
         factor_values[expression] = factor
 
         full_metrics = score(factor)
@@ -178,6 +227,7 @@ def cross_validate(
             "decision": "",
             "name": candidate["factor_name"],
             "expression": expression,
+            "mode": "specific" if specific else "raw",
             "summary_train_sharpe": candidate["train_sharpe"],
             "summary_valid_sharpe": candidate["valid_sharpe"],
             "summary_test_sharpe": candidate["test_sharpe"],
@@ -371,6 +421,7 @@ def _correlation_clusters(
 def _write_candidates_csv(path: Path, records: list[dict[str, Any]]) -> None:
     fields = [
         "decision",
+        "mode",
         "name",
         "expression",
         "summary_train_sharpe",
@@ -428,6 +479,7 @@ def _write_report(
         lines.append(
             "- "
             f"{record['decision']} | {record['name']} "
+            f"| mode={record.get('mode', 'raw')} "
             f"| test_sh={record['summary_test_sharpe']:.3f} "
             f"valid_sh={record['summary_valid_sharpe']:.3f} "
             f"| time_pos={record['time_pos_folds']} "

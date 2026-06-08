@@ -19,8 +19,8 @@ def genetic_search(
 ) -> dict | None:
     search_started = time.perf_counter()
     population = [
-        {"expression": search_engine.new_random_expression(), "fitness": None, "metrics": None}
-        for _ in range(population_size)
+        {"expression": expression, "fitness": None, "metrics": None}
+        for expression in search_engine.initial_population(population_size)
     ]
     init_elapsed = time.perf_counter() - search_started
     best_overall = None
@@ -49,10 +49,13 @@ def genetic_search(
                 continue
             metrics = batch_metrics[f"gen{gen}_individual_{idx:04d}"]
             individual["metrics"] = metrics
-            individual["fitness"] = metrics.get("fitness", -999.0)
+            individual["base_fitness"] = search_engine.selection_fitness(metrics)
+            individual["fitness"] = individual["base_fitness"]
+            metrics["selection_fitness"] = individual["base_fitness"]
         scoring_elapsed = time.perf_counter() - scoring_started
 
         rank_started = time.perf_counter()
+        apply_diversity_penalty(population, search_engine)
         population.sort(key=lambda x: x["fitness"], reverse=True)
         if best_overall is None or population[0]["fitness"] > best_overall["fitness"]:
             best_overall = population[0].copy()
@@ -113,3 +116,32 @@ def genetic_search(
 def tournament_select(population: list[dict], tournament_size: int = 3) -> dict:
     tournament = np.random.choice(population, size=min(tournament_size, len(population)), replace=False)
     return max(tournament, key=lambda x: x["fitness"])
+
+
+def apply_diversity_penalty(population: list[dict], search_engine) -> None:
+    penalty = getattr(search_engine, "diversity_penalty", 0.0)
+    if penalty <= 0:
+        return
+
+    family_counts: dict[str, int] = {}
+    for individual in population:
+        family = search_engine.expression_family(individual["expression"])
+        family_counts[family] = family_counts.get(family, 0) + 1
+
+    for individual in population:
+        metrics = individual.get("metrics")
+        if metrics is None:
+            metrics = {}
+            individual["metrics"] = metrics
+        family = search_engine.expression_family(individual["expression"])
+        duplicate_count = max(0, family_counts.get(family, 1) - 1)
+        if individual.get("fitness") is None:
+            continue
+        base_fitness = individual.get("base_fitness")
+        if base_fitness is None:
+            base_fitness = individual["fitness"]
+            individual["base_fitness"] = base_fitness
+        adjusted = float(base_fitness) - penalty * duplicate_count
+        individual["fitness"] = adjusted
+        metrics["selection_fitness"] = adjusted
+        metrics["family_duplicate_count"] = duplicate_count

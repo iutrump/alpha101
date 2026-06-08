@@ -37,11 +37,23 @@ class FactorSearchEngine:
         transaction_cost: float | None = None,
         segment_ratios: tuple[float, float, float] | list[float] | None = None,
         seed: int | None = None,
+        exclude_fields: tuple[str, ...] | list[str] | None = None,
+        seed_expressions: tuple[str, ...] | list[str] | None = None,
+        max_complexity: float = 36.0,
+        complexity_penalty: float = 0.0,
+        diversity_penalty: float = 0.0,
     ):
         self.wide_data = wide_data
         self.alpha_obj = FactorDataView(wide_data)
         self.engine = FastExpressionEngine(self.alpha_obj)
         self.generator = FactorGenerator(seed=seed)
+        self.exclude_fields = tuple(exclude_fields or ())
+        if self.exclude_fields:
+            self.generator.data_fields = [
+                field for field in self.generator.data_fields if field not in set(self.exclude_fields)
+            ]
+            if not self.generator.data_fields:
+                raise ValueError("exclude_fields removed all generator data fields")
         self.results = SearchResultStore(output_dir, timeframe)
         self.n_quantiles = n_quantiles
         self.forward_periods = forward_periods
@@ -52,7 +64,10 @@ class FactorSearchEngine:
         self.segment_ratios = tuple(float(value) for value in raw_segment_ratios)
         self.evaluation_cache: dict[str, dict] = {}
         self.seen_expressions: set[str] = set()
-        self.max_complexity = 36.0
+        self.seed_expressions = tuple(seed_expressions or ())
+        self.max_complexity = float(max_complexity)
+        self.complexity_penalty = float(complexity_penalty)
+        self.diversity_penalty = float(diversity_penalty)
         self.min_obs = 30
         self._metrics_executor: ProcessPoolExecutor | None = None
 
@@ -62,6 +77,11 @@ class FactorSearchEngine:
             "git": _git_context(),
             "output_dir": str(self.results.output_dir),
             "seed": self.seed,
+            "exclude_fields": self.exclude_fields,
+            "seed_expressions": self.seed_expressions,
+            "max_complexity": self.max_complexity,
+            "complexity_penalty": self.complexity_penalty,
+            "diversity_penalty": self.diversity_penalty,
             "n_quantiles": self.n_quantiles,
             "forward_periods": self.forward_periods,
             "transaction_cost": self.transaction_cost,
@@ -92,6 +112,34 @@ class FactorSearchEngine:
         expr = self.normalize_expression(self.generator.generate_random_factor())
         self.seen_expressions.add(expr)
         return expr
+
+    def initial_population(self, population_size: int) -> list[str]:
+        expressions: list[str] = []
+        for raw_expr in self.seed_expressions:
+            expr = self.normalize_expression(raw_expr)
+            if expr in self.seen_expressions:
+                continue
+            self._validate_expression(expr)
+            self.seen_expressions.add(expr)
+            expressions.append(expr)
+            if len(expressions) >= population_size:
+                return expressions
+
+        while len(expressions) < population_size:
+            expressions.append(self.new_random_expression())
+        return expressions
+
+    def selection_fitness(self, metrics: dict) -> float:
+        raw = float(metrics.get("fitness", -999.0))
+        if metrics.get("status") != "success":
+            return raw
+        complexity = float(metrics.get("complexity_score", 0.0) or 0.0)
+        return raw - self.complexity_penalty * complexity
+
+    def expression_family(self, expr: str) -> str:
+        norm = self.normalize_expression(expr)
+        norm = re.sub(r"\b\d+(?:\.\d+)?\b", "#", norm)
+        return re.sub(r"\s+", "", norm)
 
     def evaluate_factor(self, factor_name: str, factor_expr: str) -> Dict:
         try:
