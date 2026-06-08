@@ -13,7 +13,7 @@ import pandas as pd
 from alpha101.config import get_config
 from alpha101.data import FactorDataView, build_research_wide_frame
 from alpha101.factors.evaluation import StyleConfig, build_style_factors, residualize_style_factor
-from alpha101.factors.evaluation.scoring import _score_factor_segment, forward_returns
+from alpha101.factors.evaluation.scoring import _score_factor_segment, _time_segment_slices, forward_returns
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.operator_lib import process_factor_wide_format
 
@@ -49,6 +49,12 @@ def main() -> None:
     parser.add_argument("--universe-folds", type=int, default=3)
     parser.add_argument("--corr-threshold", type=float, default=0.90)
     parser.add_argument("--timeframe", type=str, default=None, help="Override config timeframe, e.g. 1h or 4h.")
+    parser.add_argument(
+        "--report-mode",
+        choices=["validation", "final"],
+        default="validation",
+        help="validation excludes held-out test data; final may report test metrics for frozen candidates.",
+    )
     parser.add_argument(
         "--specific",
         action="store_true",
@@ -115,14 +121,16 @@ def main() -> None:
 
     forward_periods_values = args.forward_periods or [int(manifest.get("forward_periods", 1))]
     for forward_periods in forward_periods_values:
-        run_manifest = {**manifest, "forward_periods": int(forward_periods)}
+        run_manifest = {**manifest, "forward_periods": int(forward_periods), "report_mode": args.report_mode}
+        eval_wide = _wide_for_report_mode(wide, run_manifest, args.report_mode)
         records, corr_clusters = cross_validate(
             candidates,
-            wide,
+            eval_wide,
             manifest=run_manifest,
             time_folds=args.time_folds,
             universe_folds=args.universe_folds,
             corr_threshold=args.corr_threshold,
+            report_mode=args.report_mode,
             specific=args.specific,
             style_config=StyleConfig(
                 momentum_window=args.momentum_window,
@@ -140,6 +148,8 @@ def main() -> None:
             suffix_parts.append(f"fp{forward_periods}")
         if args.specific:
             suffix_parts.append("specific")
+        if args.report_mode == "final":
+            suffix_parts.append("final")
         suffix = "" if not suffix_parts else "_" + "_".join(suffix_parts)
         csv_path = out_dir / f"cross_validation_candidates{suffix}.csv"
         md_path = out_dir / f"cross_validation_report{suffix}.md"
@@ -157,9 +167,12 @@ def cross_validate(
     time_folds: int,
     universe_folds: int,
     corr_threshold: float,
+    report_mode: str = "validation",
     specific: bool = False,
     style_config: StyleConfig | None = None,
 ) -> tuple[list[dict[str, Any]], list[list[str]]]:
+    if report_mode not in {"validation", "final"}:
+        raise ValueError("report_mode must be 'validation' or 'final'")
     close = wide["close"]
     columns = list(close.columns)
     n_quantiles = int(manifest.get("n_quantiles", 5))
@@ -228,10 +241,11 @@ def cross_validate(
             "name": candidate["factor_name"],
             "expression": expression,
             "mode": "specific" if specific else "raw",
+            "report_mode": report_mode,
             "summary_train_sharpe": candidate["train_sharpe"],
             "summary_valid_sharpe": candidate["valid_sharpe"],
-            "summary_test_sharpe": candidate["test_sharpe"],
-            "summary_test_ic_ir": candidate["test_ic_ir"],
+            "summary_test_sharpe": candidate["test_sharpe"] if report_mode == "final" else np.nan,
+            "summary_test_ic_ir": candidate["test_ic_ir"] if report_mode == "final" else np.nan,
             "summary_complexity": candidate["complexity_score"],
             "full_sharpe": full_metrics["sharpe_ratio"],
             "full_returns": full_metrics["returns"],
@@ -262,7 +276,7 @@ def _select_candidates(rows: list[dict[str, Any]], *, max_candidates: int) -> li
     for row in rows:
         if _robust_summary_candidate(row):
             selected.setdefault(row["expression"], row)
-    for row in sorted(rows, key=lambda x: x["test_sharpe"], reverse=True)[:max_candidates]:
+    for row in sorted(rows, key=_summary_sort_key)[:max_candidates]:
         if row["complexity_score"] <= 8:
             selected.setdefault(row["expression"], row)
     return list(selected.values())
@@ -313,52 +327,55 @@ def _dedupe_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]
     return list(deduped.values())
 
 
+def _wide_for_report_mode(wide: pd.DataFrame, manifest: dict[str, Any], report_mode: str) -> pd.DataFrame:
+    if report_mode == "final":
+        return wide
+    ratios = tuple(float(value) for value in manifest.get("segment_ratios", (0.70, 0.15, 0.15)))
+    valid_slice = _time_segment_slices(len(wide), ratios)["valid"]
+    return wide.iloc[valid_slice]
+
+
 def _robust_summary_candidate(row: dict[str, Any]) -> bool:
     return (
         row["valid_sharpe"] > 1
-        and row["test_sharpe"] > 1
         and row["train_sharpe"] > 0
-        and row["test_ic_ir"] > 0.1
+        and row["valid_ic_ir"] > 0.1
         and row["complexity_score"] <= 6
     )
 
 
 def _decision(record: dict[str, Any], universe_folds: int) -> str:
-    if np.isnan(record["summary_test_sharpe"]) or np.isnan(record["summary_valid_sharpe"]):
-        if (
-            record["time_pos_folds"] >= 5
-            and record["universe_pos_groups"] == universe_folds
-            and record["time_median_sharpe"] > 1.0
-            and record["universe_min_sharpe"] > 0
-            and record["full_sharpe"] >= 2.0
-        ):
-            return "accepted_candidate"
-        if (
-            record["time_pos_folds"] >= 4
-            and record["universe_pos_groups"] >= max(1, universe_folds - 1)
-            and record["time_median_sharpe"] > 0
-        ):
-            return "watchlist"
-        return "rejected"
-
+    valid_ok = np.isnan(record["summary_valid_sharpe"]) or record["summary_valid_sharpe"] >= 1.0
     if (
-        record["summary_test_sharpe"] >= 1.0
-        and record["summary_valid_sharpe"] >= 1.0
-        and record["time_pos_folds"] >= 4
+        valid_ok
+        and record["time_pos_folds"] >= 5
         and record["universe_pos_groups"] == universe_folds
-        and record["time_median_sharpe"] > 0
+        and record["time_median_sharpe"] > 1.0
         and record["universe_min_sharpe"] > 0
+        and record["full_sharpe"] >= 2.0
     ):
-        if record["time_gt1_folds"] >= 2 or record["full_sharpe"] >= 2:
-            return "accepted_candidate"
-        return "watchlist"
+        return "accepted_candidate"
     if (
-        record["summary_test_sharpe"] >= 1.0
-        and record["time_pos_folds"] >= 3
+        valid_ok
+        and record["time_pos_folds"] >= 4
         and record["universe_pos_groups"] >= max(1, universe_folds - 1)
+        and record["time_median_sharpe"] > 0
     ):
         return "watchlist"
     return "rejected"
+
+
+def _summary_sort_key(row: dict[str, Any]) -> tuple[float, float, float]:
+    valid_sharpe = _nan_to_neg_inf(row.get("valid_sharpe", np.nan))
+    train_sharpe = _nan_to_neg_inf(row.get("train_sharpe", np.nan))
+    complexity = row.get("complexity_score", np.nan)
+    complexity_sort = -float(complexity) if np.isfinite(complexity) else float("-inf")
+    return (-valid_sharpe, -train_sharpe, -complexity_sort)
+
+
+def _nan_to_neg_inf(value: Any) -> float:
+    value = float(value)
+    return value if np.isfinite(value) else float("-inf")
 
 
 def _load_success_rows(path: Path) -> list[dict[str, Any]]:
@@ -422,6 +439,7 @@ def _write_candidates_csv(path: Path, records: list[dict[str, Any]]) -> None:
     fields = [
         "decision",
         "mode",
+        "report_mode",
         "name",
         "expression",
         "summary_train_sharpe",
@@ -467,6 +485,7 @@ def _write_report(
         "# Cross Validation Report",
         "",
         f"Source: `{summary_path}`" if summary_path else "Source: manual expressions",
+        f"Report mode: `{manifest.get('report_mode', 'validation')}`",
         (
             f"Data: {wide.index.min()} to {wide.index.max()}, "
             f"{len(wide)} bars, {wide['close'].shape[1]} symbols, "
@@ -476,12 +495,17 @@ def _write_report(
         "## Decisions",
     ]
     for record in sorted(records, key=_record_sort_key):
+        test_part = (
+            f"test_sh={record['summary_test_sharpe']:.3f} "
+            if record.get("report_mode") == "final"
+            else ""
+        )
         lines.append(
             "- "
             f"{record['decision']} | {record['name']} "
             f"| mode={record.get('mode', 'raw')} "
-            f"| test_sh={record['summary_test_sharpe']:.3f} "
             f"valid_sh={record['summary_valid_sharpe']:.3f} "
+            f"{test_part}"
             f"| time_pos={record['time_pos_folds']} "
             f"time_med={record['time_median_sharpe']:.3f} "
             f"time_min={record['time_min_sharpe']:.3f} "
@@ -497,9 +521,12 @@ def _write_report(
         parts = []
         for expression in cluster:
             record = expression_to_record[expression]
+            summary = f"valid_sh={record['summary_valid_sharpe']:.3f}"
+            if record.get("report_mode") == "final":
+                summary += f", test_sh={record['summary_test_sharpe']:.3f}"
             parts.append(
                 f"{record['name']} ({record['decision']}, "
-                f"test_sh={record['summary_test_sharpe']:.3f})"
+                f"{summary})"
             )
         lines.append("- " + "; ".join(parts))
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -507,7 +534,7 @@ def _write_report(
 
 def _record_sort_key(record: dict[str, Any]) -> tuple[int, float]:
     order = {"accepted_candidate": 0, "watchlist": 1, "rejected": 2}
-    return order.get(record["decision"], 9), -float(record["summary_test_sharpe"])
+    return order.get(record["decision"], 9), -float(record["time_median_sharpe"])
 
 
 if __name__ == "__main__":
