@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 
@@ -63,6 +64,11 @@ def genetic_search(
         if validated_elite:
             population.sort(key=lambda x: x["fitness"], reverse=True)
         validation_elapsed = time.perf_counter() - validation_started
+        pnl_dedupe_started = time.perf_counter()
+        pnl_dedupe_stats = search_engine.dedupe_population_by_pnl(population, gen + 1)
+        if pnl_dedupe_stats["checked"]:
+            population.sort(key=lambda x: x["fitness"], reverse=True)
+        pnl_dedupe_elapsed = time.perf_counter() - pnl_dedupe_started
         if best_overall is None or population[0]["fitness"] > best_overall["fitness"]:
             best_overall = population[0].copy()
         rank_elapsed = time.perf_counter() - rank_started
@@ -107,11 +113,14 @@ def genetic_search(
                 f"score_assign={scoring_elapsed:.3f}s "
                 f"rank={rank_elapsed:.3f}s "
                 f"elite_validation={validation_elapsed:.3f}s "
+                f"pnl_dedupe={pnl_dedupe_elapsed:.3f}s "
                 f"save={save_elapsed:.3f}s "
                 f"reproduce={reproduce_elapsed:.3f}s "
                 f"total={gen_elapsed:.3f}s "
                 f"evaluated={len(pending)} "
                 f"validated_elite={validated_elite} "
+                f"pnl_dedupe_checked={pnl_dedupe_stats['checked']} "
+                f"pnl_dedupe_redundant={pnl_dedupe_stats['redundant']} "
                 f"cache_size={len(search_engine.evaluation_cache)}"
             )
 
@@ -152,3 +161,61 @@ def apply_diversity_penalty(population: list[dict], search_engine) -> None:
         individual["fitness"] = adjusted
         metrics["selection_fitness"] = adjusted
         metrics["family_duplicate_count"] = duplicate_count
+
+
+def apply_pnl_redundancy_penalty(
+    population: list[dict],
+    pnl_values: dict[str, pd.Series],
+    *,
+    threshold: float,
+    penalty: float,
+) -> dict[str, int]:
+    candidates = [
+        individual
+        for individual in population
+        if individual.get("metrics")
+        and individual["metrics"].get("status") == "success"
+        and individual.get("expression") in pnl_values
+        and individual.get("fitness") is not None
+    ]
+    candidates.sort(key=lambda individual: individual["fitness"], reverse=True)
+
+    kept: list[dict] = []
+    redundant = 0
+    for individual in candidates:
+        metrics = individual["metrics"]
+        expression = individual["expression"]
+        pnl = pnl_values[expression]
+        max_corr = 0.0
+        nearest_expression = ""
+        for kept_individual in kept:
+            kept_expression = kept_individual["expression"]
+            corr = _series_corr(pnl, pnl_values[kept_expression])
+            if abs(corr) > abs(max_corr):
+                max_corr = corr
+                nearest_expression = kept_expression
+
+        is_redundant = bool(nearest_expression and abs(max_corr) >= threshold)
+        metrics["search_max_pnl_corr"] = float(max_corr)
+        metrics["search_nearest_pnl_corr_expression"] = nearest_expression
+        metrics["search_redundant_by_pnl"] = is_redundant
+        metrics["search_pnl_corr_threshold"] = float(threshold)
+        if is_redundant:
+            redundant += 1
+            metrics["search_pnl_redundancy_penalty"] = float(penalty)
+            metrics["pre_pnl_dedupe_fitness"] = float(individual["fitness"])
+            individual["fitness"] = float(individual["fitness"]) - float(penalty)
+            metrics["selection_fitness"] = individual["fitness"]
+        else:
+            metrics["search_pnl_redundancy_penalty"] = 0.0
+            kept.append(individual)
+
+    return {"checked": len(candidates), "kept": len(kept), "redundant": redundant}
+
+
+def _series_corr(left: pd.Series, right: pd.Series) -> float:
+    aligned = pd.concat([left, right], axis=1, join="inner").dropna()
+    if len(aligned) < 3:
+        return 0.0
+    corr = aligned.iloc[:, 0].corr(aligned.iloc[:, 1])
+    return float(corr) if np.isfinite(corr) else 0.0

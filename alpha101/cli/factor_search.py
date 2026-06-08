@@ -46,6 +46,24 @@ def main() -> None:
     )
     parser.add_argument("--cv-failure-penalty", type=float, default=0.5, help="Penalty per failed elite robustness validation set.")
     parser.add_argument(
+        "--pnl-dedupe-interval",
+        type=int,
+        default=1,
+        help="Run search-visible PnL correlation dedupe every N generations; <=0 disables it.",
+    )
+    parser.add_argument(
+        "--pnl-corr-threshold",
+        type=float,
+        default=0.85,
+        help="Max allowed absolute PnL correlation among candidates kept for GA selection.",
+    )
+    parser.add_argument(
+        "--pnl-redundancy-penalty",
+        type=float,
+        default=999.0,
+        help="Selection fitness penalty applied to PnL-redundant candidates.",
+    )
+    parser.add_argument(
         "--exclude-fields",
         nargs="*",
         default=None,
@@ -94,6 +112,9 @@ def main() -> None:
         validation_walk_forward_folds=args.validation_walk_forward_folds,
         validation_extra_n_quantiles=args.validation_extra_n_quantiles,
         cv_failure_penalty=args.cv_failure_penalty,
+        pnl_dedupe_interval=args.pnl_dedupe_interval,
+        pnl_corr_threshold=args.pnl_corr_threshold,
+        pnl_redundancy_penalty=args.pnl_redundancy_penalty,
     )
     search_engine.save_manifest(cli_args=vars(args))
 

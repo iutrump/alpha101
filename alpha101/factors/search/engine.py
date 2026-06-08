@@ -18,11 +18,14 @@ from alpha101.data import FactorDataView
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.expression.runtime import alpha_fields
 from alpha101.factors.generation import FactorGenerator
-from alpha101.factors.evaluation import score_factor_search
+from alpha101.factors.evaluation import forward_returns, score_factor_search
+from alpha101.factors.evaluation.scoring import _time_segment_slices
+from alpha101.factors.operator_lib import process_factor_wide_format
 from alpha101.factors.search.results import SearchResultStore
 from alpha101.factors.search.strategies import genetic_search
+from alpha101.factors.search.strategies import apply_pnl_redundancy_penalty
 from alpha101.factors.search.worker import evaluate_search_item, init_search_worker
-from alpha101.factors.validation import validate_expressions_on_validation
+from alpha101.factors.validation import factor_pnl_series, validate_expressions_on_validation
 
 
 class FactorSearchEngine:
@@ -53,6 +56,9 @@ class FactorSearchEngine:
         validation_walk_forward_folds: int = 4,
         validation_extra_n_quantiles: tuple[int, ...] | list[int] = (10,),
         cv_failure_penalty: float = 0.5,
+        pnl_dedupe_interval: int = 1,
+        pnl_corr_threshold: float = 0.85,
+        pnl_redundancy_penalty: float = 999.0,
     ):
         self.wide_data = wide_data
         self.alpha_obj = FactorDataView(wide_data)
@@ -89,8 +95,12 @@ class FactorSearchEngine:
         self.validation_walk_forward_folds = int(validation_walk_forward_folds)
         self.validation_extra_n_quantiles = tuple(int(value) for value in validation_extra_n_quantiles)
         self.cv_failure_penalty = float(cv_failure_penalty)
+        self.pnl_dedupe_interval = int(pnl_dedupe_interval)
+        self.pnl_corr_threshold = float(pnl_corr_threshold)
+        self.pnl_redundancy_penalty = float(pnl_redundancy_penalty)
         self.min_obs = 30
         self._metrics_executor: ProcessPoolExecutor | None = None
+        self._pnl_dedupe_cache: dict[str, pd.Series] = {}
 
     def save_manifest(self, *, cli_args: dict | None = None) -> None:
         manifest = {
@@ -113,6 +123,9 @@ class FactorSearchEngine:
             "validation_walk_forward_folds": self.validation_walk_forward_folds,
             "validation_extra_n_quantiles": self.validation_extra_n_quantiles,
             "cv_failure_penalty": self.cv_failure_penalty,
+            "pnl_dedupe_interval": self.pnl_dedupe_interval,
+            "pnl_corr_threshold": self.pnl_corr_threshold,
+            "pnl_redundancy_penalty": self.pnl_redundancy_penalty,
             "n_quantiles": self.n_quantiles,
             "forward_periods": self.forward_periods,
             "transaction_cost": self.transaction_cost,
@@ -228,6 +241,54 @@ class FactorSearchEngine:
             if metrics.get(f"cv_nq{int(quantile)}_pass") is False:
                 count += 1
         return count
+
+    def dedupe_population_by_pnl(self, population: list[dict], generation: int) -> dict[str, int]:
+        if self.pnl_dedupe_interval <= 0 or generation % self.pnl_dedupe_interval != 0:
+            return {"checked": 0, "kept": 0, "redundant": 0}
+        candidates = [
+            individual
+            for individual in population
+            if individual.get("metrics") and individual["metrics"].get("status") == "success"
+        ]
+        if len(candidates) <= 1:
+            return {"checked": len(candidates), "kept": len(candidates), "redundant": 0}
+
+        pnl_values: dict[str, pd.Series] = {}
+        for individual in tqdm(candidates, desc=f"PNL dedupe generation {generation}"):
+            expression = individual["expression"]
+            try:
+                pnl_values[expression] = self._search_visible_pnl(expression)
+            except Exception as exc:
+                individual["metrics"]["search_pnl_dedupe_error"] = str(exc)
+        return apply_pnl_redundancy_penalty(
+            population,
+            pnl_values,
+            threshold=self.pnl_corr_threshold,
+            penalty=self.pnl_redundancy_penalty,
+        )
+
+    def _search_visible_pnl(self, expression: str) -> pd.Series:
+        cached = self._pnl_dedupe_cache.get(expression)
+        if cached is not None:
+            return cached
+        raw_factor = self.engine.evaluate(expression)
+        factor = process_factor_wide_format(raw_factor).reindex(
+            index=self.wide_data.index,
+            columns=self.wide_data["close"].columns,
+        )
+        target = forward_returns(self.wide_data["close"], periods=self.forward_periods)
+        slices = _time_segment_slices(len(self.wide_data), self.segment_ratios)
+        visible_slice = slice(slices["train"].start, slices["valid"].stop)
+        factor = factor.iloc[visible_slice]
+        target = target.iloc[visible_slice]
+        pnl = factor_pnl_series(
+            factor,
+            target,
+            n_quantiles=self.n_quantiles,
+            transaction_cost=self.transaction_cost,
+        )
+        self._pnl_dedupe_cache[expression] = pnl
+        return pnl
 
     def expression_family(self, expr: str) -> str:
         norm = self.normalize_expression(expr)

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from alpha101.factors.search import FactorSearchEngine
 from alpha101.factors.search.strategies import apply_diversity_penalty
+from alpha101.factors.search.strategies import apply_pnl_redundancy_penalty
 from tests.test_expression_runtime import make_wide_data
 
 
@@ -137,6 +139,40 @@ def test_diversity_penalty_recomputes_from_base_fitness():
 
     assert np.isclose(population[0]["fitness"], 2.0)
     assert population[0]["metrics"]["family_duplicate_count"] == 0
+
+
+def test_pnl_redundancy_penalty_filters_similar_selection_candidates():
+    population = [
+        {
+            "expression": "a",
+            "fitness": 3.0,
+            "metrics": {"status": "success"},
+        },
+        {
+            "expression": "b",
+            "fitness": 2.5,
+            "metrics": {"status": "success"},
+        },
+        {
+            "expression": "c",
+            "fitness": 2.0,
+            "metrics": {"status": "success"},
+        },
+    ]
+    pnl_values = {
+        "a": pd.Series([0.01, 0.02, -0.01, 0.03]),
+        "b": pd.Series([0.011, 0.021, -0.011, 0.031]),
+        "c": pd.Series([-0.02, 0.01, 0.02, -0.01]),
+    }
+
+    stats = apply_pnl_redundancy_penalty(population, pnl_values, threshold=0.95, penalty=10.0)
+
+    assert stats == {"checked": 3, "kept": 2, "redundant": 1}
+    assert population[0]["metrics"]["search_redundant_by_pnl"] is False
+    assert population[1]["metrics"]["search_redundant_by_pnl"] is True
+    assert population[1]["metrics"]["search_nearest_pnl_corr_expression"] == "a"
+    assert np.isclose(population[1]["fitness"], -7.5)
+    assert population[2]["metrics"]["search_redundant_by_pnl"] is False
 
 
 def test_factor_search_validates_elite_on_interval():

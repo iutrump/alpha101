@@ -44,7 +44,8 @@ class SearchResultStore:
             return
 
         success_df["expression_norm"] = success_df["expression"].map(normalize_expression)
-        success_df = success_df.sort_values("fitness", ascending=False).drop_duplicates("expression_norm")
+        sort_column = "selection_fitness" if "selection_fitness" in success_df.columns else "fitness"
+        success_df = success_df.sort_values(sort_column, ascending=False).drop_duplicates("expression_norm")
         summary_path = self.output_dir / "summary.csv"
         success_df = _ordered_frame(success_df.to_dict(orient="records"))
         success_df.to_csv(summary_path, index=False, float_format="%.3f")
@@ -52,7 +53,8 @@ class SearchResultStore:
         print(f"Total factors evaluated: {len(df)}")
         print(f"Successful factors: {len(success_df)}")
         print("Top factors:")
-        cols = ["factor_name", "fitness", "sharpe_ratio", "ic_ir", "returns", "expression"]
+        cols = ["factor_name", sort_column, "fitness", "sharpe_ratio", "ic_ir", "returns", "expression"]
+        cols = list(dict.fromkeys(cols))
         print(success_df[cols].head(10).to_string(index=False))
         print(f"Summary saved to {summary_path}")
 
@@ -73,6 +75,11 @@ FRONT_COLUMNS = [
     "validation_pass",
     "train_valid_sharpe_gap",
     "selection_fitness",
+    "search_redundant_by_pnl",
+    "search_max_pnl_corr",
+    "search_nearest_pnl_corr_expression",
+    "search_pnl_redundancy_penalty",
+    "pre_pnl_dedupe_fitness",
     "cv_pass",
     "cv_failure_penalty",
     "cv_time_pos_folds",
