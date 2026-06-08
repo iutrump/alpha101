@@ -46,6 +46,7 @@ def main() -> None:
     parser.add_argument("--time-folds", type=int, default=6)
     parser.add_argument("--universe-folds", type=int, default=3)
     parser.add_argument("--corr-threshold", type=float, default=0.90)
+    parser.add_argument("--pnl-corr-threshold", type=float, default=0.85)
     parser.add_argument("--timeframe", type=str, default=None, help="Override config timeframe, e.g. 1h or 4h.")
     parser.add_argument(
         "--report-mode",
@@ -135,6 +136,7 @@ def main() -> None:
             "final_evaluation": args.report_mode == "final",
             "candidate_source": candidate_source,
             "candidate_count": len(candidates),
+            "pnl_corr_threshold": args.pnl_corr_threshold,
         }
         eval_wide = wide_for_report_mode(wide, run_manifest, args.report_mode)
         records, corr_clusters = cross_validate_candidates(
@@ -144,6 +146,7 @@ def main() -> None:
             time_folds=args.time_folds,
             universe_folds=args.universe_folds,
             corr_threshold=args.corr_threshold,
+            pnl_corr_threshold=args.pnl_corr_threshold,
             report_mode=args.report_mode,
             specific=args.specific,
             style_config=StyleConfig(
@@ -327,6 +330,9 @@ def _write_candidates_csv(path: Path, records: list[dict[str, Any]]) -> None:
         "universe_pos_groups",
         "universe_min_sharpe",
         "universe_median_sharpe",
+        "max_pnl_corr",
+        "nearest_pnl_corr_expression",
+        "redundant_by_pnl",
         "time_sharpes",
         "universe_sharpes",
     ]
@@ -381,6 +387,8 @@ def _write_report(
             f"time_min={record['time_min_sharpe']:.3f} "
             f"| universe_pos={record['universe_pos_groups']} "
             f"universe_min={record['universe_min_sharpe']:.3f} "
+            f"| pnl_corr={record['max_pnl_corr']:.3f} "
+            f"redundant={record['redundant_by_pnl']} "
             f"| `{record['expression']}`"
         )
 
@@ -402,9 +410,10 @@ def _write_report(
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _record_sort_key(record: dict[str, Any]) -> tuple[int, float]:
+def _record_sort_key(record: dict[str, Any]) -> tuple[int, int, float]:
     order = {"accepted_candidate": 0, "watchlist": 1, "rejected": 2}
-    return order.get(record["decision"], 9), -float(record["time_median_sharpe"])
+    redundancy = 1 if record.get("redundant_by_pnl", False) else 0
+    return order.get(record["decision"], 9), redundancy, -float(record["time_median_sharpe"])
 
 
 if __name__ == "__main__":
