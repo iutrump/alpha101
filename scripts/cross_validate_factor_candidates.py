@@ -47,6 +47,18 @@ def main() -> None:
     parser.add_argument("--universe-folds", type=int, default=3)
     parser.add_argument("--corr-threshold", type=float, default=0.90)
     parser.add_argument("--pnl-corr-threshold", type=float, default=0.85)
+    parser.add_argument(
+        "--robust-max-complexity",
+        type=float,
+        default=10.0,
+        help="Max complexity for summary rows that already pass robust train/valid filters.",
+    )
+    parser.add_argument(
+        "--candidate-max-complexity",
+        type=float,
+        default=12.0,
+        help="Max complexity for top summary rows added as validation candidates.",
+    )
     parser.add_argument("--timeframe", type=str, default=None, help="Override config timeframe, e.g. 1h or 4h.")
     parser.add_argument(
         "--report-mode",
@@ -105,7 +117,14 @@ def main() -> None:
     candidates: list[dict[str, Any]] = []
     if summary_path is not None:
         rows = _load_success_rows(summary_path)
-        candidates.extend(_select_candidates(rows, max_candidates=args.max_candidates))
+        candidates.extend(
+            _select_candidates(
+                rows,
+                max_candidates=args.max_candidates,
+                robust_max_complexity=args.robust_max_complexity,
+                candidate_max_complexity=args.candidate_max_complexity,
+            )
+        )
     candidates.extend(_load_manual_candidates(args.expression or [], args.expressions_file))
     candidates = _dedupe_candidates(candidates)
     candidate_source = _candidate_source_metadata(summary_path, args.expression or [], args.expressions_file)
@@ -137,6 +156,8 @@ def main() -> None:
             "candidate_source": candidate_source,
             "candidate_count": len(candidates),
             "pnl_corr_threshold": args.pnl_corr_threshold,
+            "robust_max_complexity": args.robust_max_complexity,
+            "candidate_max_complexity": args.candidate_max_complexity,
         }
         eval_wide = wide_for_report_mode(wide, run_manifest, args.report_mode)
         records, corr_clusters = cross_validate_candidates(
@@ -180,13 +201,19 @@ def main() -> None:
         print(f"Wrote {manifest_out_path}")
 
 
-def _select_candidates(rows: list[dict[str, Any]], *, max_candidates: int) -> list[dict[str, Any]]:
+def _select_candidates(
+    rows: list[dict[str, Any]],
+    *,
+    max_candidates: int,
+    robust_max_complexity: float = 10.0,
+    candidate_max_complexity: float = 12.0,
+) -> list[dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
     for row in rows:
-        if _robust_summary_candidate(row):
+        if _robust_summary_candidate(row, max_complexity=robust_max_complexity):
             selected.setdefault(row["expression"], row)
     for row in sorted(rows, key=_summary_sort_key)[:max_candidates]:
-        if row["complexity_score"] <= 8:
+        if row["complexity_score"] <= candidate_max_complexity:
             selected.setdefault(row["expression"], row)
     return list(selected.values())
 
@@ -267,12 +294,12 @@ def _file_source_metadata(source_type: str, path: Path) -> dict[str, Any]:
     }
 
 
-def _robust_summary_candidate(row: dict[str, Any]) -> bool:
+def _robust_summary_candidate(row: dict[str, Any], *, max_complexity: float) -> bool:
     return (
         row["valid_sharpe"] > 1
         and row["train_sharpe"] > 0
         and row["valid_ic_ir"] > 0.1
-        and row["complexity_score"] <= 6
+        and row["complexity_score"] <= max_complexity
     )
 
 def _summary_sort_key(row: dict[str, Any]) -> tuple[float, float, float]:
