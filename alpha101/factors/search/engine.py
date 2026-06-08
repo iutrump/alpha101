@@ -42,6 +42,10 @@ class FactorSearchEngine:
         max_complexity: float = 36.0,
         complexity_penalty: float = 0.0,
         diversity_penalty: float = 0.0,
+        min_valid_sharpe: float | None = None,
+        min_valid_ic_ir: float | None = None,
+        validation_failure_penalty: float = 0.0,
+        train_valid_gap_penalty: float = 0.0,
     ):
         self.wide_data = wide_data
         self.alpha_obj = FactorDataView(wide_data)
@@ -68,6 +72,10 @@ class FactorSearchEngine:
         self.max_complexity = float(max_complexity)
         self.complexity_penalty = float(complexity_penalty)
         self.diversity_penalty = float(diversity_penalty)
+        self.min_valid_sharpe = None if min_valid_sharpe is None else float(min_valid_sharpe)
+        self.min_valid_ic_ir = None if min_valid_ic_ir is None else float(min_valid_ic_ir)
+        self.validation_failure_penalty = float(validation_failure_penalty)
+        self.train_valid_gap_penalty = float(train_valid_gap_penalty)
         self.min_obs = 30
         self._metrics_executor: ProcessPoolExecutor | None = None
 
@@ -82,6 +90,10 @@ class FactorSearchEngine:
             "max_complexity": self.max_complexity,
             "complexity_penalty": self.complexity_penalty,
             "diversity_penalty": self.diversity_penalty,
+            "min_valid_sharpe": self.min_valid_sharpe,
+            "min_valid_ic_ir": self.min_valid_ic_ir,
+            "validation_failure_penalty": self.validation_failure_penalty,
+            "train_valid_gap_penalty": self.train_valid_gap_penalty,
             "n_quantiles": self.n_quantiles,
             "forward_periods": self.forward_periods,
             "transaction_cost": self.transaction_cost,
@@ -134,7 +146,22 @@ class FactorSearchEngine:
         if metrics.get("status") != "success":
             return raw
         complexity = float(metrics.get("complexity_score", 0.0) or 0.0)
-        return raw - self.complexity_penalty * complexity
+        valid_sharpe = float(metrics.get("valid_sharpe", 0.0) or 0.0)
+        valid_ic_ir = float(metrics.get("valid_ic_ir", 0.0) or 0.0)
+        train_sharpe = float(metrics.get("train_sharpe", 0.0) or 0.0)
+        train_valid_gap = max(0.0, train_sharpe - valid_sharpe)
+        validation_pass = True
+        if self.min_valid_sharpe is not None and valid_sharpe < self.min_valid_sharpe:
+            validation_pass = False
+        if self.min_valid_ic_ir is not None and valid_ic_ir < self.min_valid_ic_ir:
+            validation_pass = False
+        metrics["train_valid_sharpe_gap"] = train_valid_gap
+        metrics["validation_pass"] = validation_pass
+        fitness = raw - self.complexity_penalty * complexity
+        fitness -= self.train_valid_gap_penalty * train_valid_gap
+        if not validation_pass:
+            fitness -= self.validation_failure_penalty
+        return fitness
 
     def expression_family(self, expr: str) -> str:
         norm = self.normalize_expression(expr)

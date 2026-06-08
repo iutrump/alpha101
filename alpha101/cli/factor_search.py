@@ -29,6 +29,10 @@ def main() -> None:
     parser.add_argument("--max-complexity", type=float, default=36.0, help="Reject generated expressions above this complexity.")
     parser.add_argument("--complexity-penalty", type=float, default=0.0, help="Penalty applied to GP selection fitness per complexity point.")
     parser.add_argument("--diversity-penalty", type=float, default=0.0, help="Penalty for duplicate expression families within a generation.")
+    parser.add_argument("--min-valid-sharpe", type=float, default=None, help="Optional validation Sharpe floor for GP selection.")
+    parser.add_argument("--min-valid-ic-ir", type=float, default=None, help="Optional validation IC IR floor for GP selection.")
+    parser.add_argument("--validation-failure-penalty", type=float, default=0.0, help="Penalty when validation floors are not met.")
+    parser.add_argument("--train-valid-gap-penalty", type=float, default=0.0, help="Penalty per Sharpe point of train-valid gap.")
     parser.add_argument(
         "--exclude-fields",
         nargs="*",
@@ -68,6 +72,10 @@ def main() -> None:
         max_complexity=args.max_complexity,
         complexity_penalty=args.complexity_penalty,
         diversity_penalty=args.diversity_penalty,
+        min_valid_sharpe=args.min_valid_sharpe,
+        min_valid_ic_ir=args.min_valid_ic_ir,
+        validation_failure_penalty=args.validation_failure_penalty,
+        train_valid_gap_penalty=args.train_valid_gap_penalty,
     )
     search_engine.save_manifest(cli_args=vars(args))
 
