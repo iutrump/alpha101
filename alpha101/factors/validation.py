@@ -142,6 +142,56 @@ def wide_for_report_mode(wide: pd.DataFrame, manifest: dict[str, Any], report_mo
     return wide.iloc[valid_slice]
 
 
+def validate_expressions_on_validation(
+    expressions: list[str],
+    wide: pd.DataFrame,
+    *,
+    manifest: dict[str, Any],
+    time_folds: int,
+    universe_folds: int,
+    walk_forward_folds: int,
+    n_quantiles: int,
+    extra_n_quantiles: tuple[int, ...] | list[int] = (),
+) -> dict[str, dict[str, Any]]:
+    validation_wide = wide_for_report_mode(wide, manifest, "validation")
+    close = validation_wide["close"]
+    columns = list(close.columns)
+    forward_periods = int(manifest.get("forward_periods", 1))
+    transaction_cost = float(manifest.get("transaction_cost", 0.001))
+    target = forward_returns(close, periods=forward_periods)
+    engine = FastExpressionEngine(FactorDataView(validation_wide))
+    time_splits = time_split_indexes(validation_wide.index, time_folds)
+    universe_splits = universe_split_columns(columns, universe_folds)
+    walk_forward_splits = walk_forward_split_indexes(validation_wide.index, walk_forward_folds)
+    quantiles = [int(n_quantiles)]
+    for value in extra_n_quantiles:
+        value = int(value)
+        if value not in quantiles:
+            quantiles.append(value)
+
+    results: dict[str, dict[str, Any]] = {}
+    for expression in expressions:
+        raw_factor = engine.evaluate(expression)
+        factor = process_factor_wide_format(raw_factor).reindex(index=validation_wide.index, columns=columns)
+        metrics: dict[str, Any] = {}
+        for quantile in quantiles:
+            prefix = "cv" if quantile == int(n_quantiles) else f"cv_nq{quantile}"
+            metrics.update(
+                _robustness_metrics_for_quantile(
+                    factor,
+                    target,
+                    time_splits=time_splits,
+                    universe_splits=universe_splits,
+                    walk_forward_splits=walk_forward_splits,
+                    n_quantiles=quantile,
+                    transaction_cost=transaction_cost,
+                    prefix=prefix,
+                )
+            )
+        results[expression] = metrics
+    return results
+
+
 def validation_decision(record: dict[str, Any], universe_folds: int) -> str:
     valid_ok = np.isnan(record["summary_valid_sharpe"]) or record["summary_valid_sharpe"] >= 1.0
     if (
@@ -166,6 +216,12 @@ def validation_decision(record: dict[str, Any], universe_folds: int) -> str:
 def time_split_indexes(index: pd.Index, n_folds: int) -> list[tuple[str, pd.Index]]:
     arrays = np.array_split(np.arange(len(index)), n_folds)
     return [(f"T{i}", index[array]) for i, array in enumerate(arrays, start=1) if len(array)]
+
+
+def walk_forward_split_indexes(index: pd.Index, n_folds: int) -> list[tuple[str, pd.Index]]:
+    arrays = np.array_split(np.arange(len(index)), max(1, n_folds) + 1)
+    holdouts = arrays[1:] if len(arrays) > 1 else arrays
+    return [(f"WF{i}", index[array]) for i, array in enumerate(holdouts, start=1) if len(array)]
 
 
 def universe_split_columns(columns: list[str], n_folds: int) -> list[tuple[str, list[str]]]:
@@ -199,6 +255,94 @@ def correlation_clusters(
         seen.update(members)
         clusters.append(members)
     return clusters
+
+
+def _robustness_metrics_for_quantile(
+    factor: pd.DataFrame,
+    target: pd.DataFrame,
+    *,
+    time_splits: list[tuple[str, pd.Index]],
+    universe_splits: list[tuple[str, list[str]]],
+    walk_forward_splits: list[tuple[str, pd.Index]],
+    n_quantiles: int,
+    transaction_cost: float,
+    prefix: str,
+) -> dict[str, Any]:
+    def score(*, dates=None, cols=None) -> dict[str, Any]:
+        factor_slice = factor if dates is None else factor.loc[dates]
+        target_slice = target if dates is None else target.loc[dates]
+        if cols is not None:
+            factor_slice = factor_slice[cols]
+            target_slice = target_slice[cols]
+        return _score_factor_segment(
+            factor_slice.to_numpy(dtype=float, copy=False),
+            target_slice.to_numpy(dtype=float, copy=False),
+            n_quantiles=n_quantiles,
+            transaction_cost=transaction_cost,
+        )
+
+    time_metrics = [
+        {"fold": label, "start": str(dates[0]), "end": str(dates[-1]), **score(dates=dates)}
+        for label, dates in time_splits
+    ]
+    universe_metrics = [
+        {"group": label, "n_symbols": len(cols), **score(cols=cols)}
+        for label, cols in universe_splits
+    ]
+    walk_forward_metrics = [
+        {"fold": label, "start": str(dates[0]), "end": str(dates[-1]), **score(dates=dates)}
+        for label, dates in walk_forward_splits
+    ]
+    time_sharpes = np.asarray([item["sharpe_ratio"] for item in time_metrics], dtype=float)
+    universe_sharpes = np.asarray([item["sharpe_ratio"] for item in universe_metrics], dtype=float)
+    walk_forward_sharpes = np.asarray([item["sharpe_ratio"] for item in walk_forward_metrics], dtype=float)
+    metrics = {
+        f"{prefix}_time_pos_folds": int(np.sum(time_sharpes > 0)),
+        f"{prefix}_time_median_sharpe": _safe_nanmedian(time_sharpes),
+        f"{prefix}_time_min_sharpe": _safe_nanmin(time_sharpes),
+        f"{prefix}_universe_pos_groups": int(np.sum(universe_sharpes > 0)),
+        f"{prefix}_universe_median_sharpe": _safe_nanmedian(universe_sharpes),
+        f"{prefix}_universe_min_sharpe": _safe_nanmin(universe_sharpes),
+        f"{prefix}_walk_forward_pos_folds": int(np.sum(walk_forward_sharpes > 0)),
+        f"{prefix}_walk_forward_median_sharpe": _safe_nanmedian(walk_forward_sharpes),
+        f"{prefix}_walk_forward_min_sharpe": _safe_nanmin(walk_forward_sharpes),
+        f"{prefix}_time_metrics": time_metrics,
+        f"{prefix}_universe_metrics": universe_metrics,
+        f"{prefix}_walk_forward_metrics": walk_forward_metrics,
+    }
+    metrics[f"{prefix}_pass"] = _robustness_pass(
+        time_sharpes,
+        universe_sharpes,
+        walk_forward_sharpes,
+    )
+    return metrics
+
+
+def _robustness_pass(
+    time_sharpes: np.ndarray,
+    universe_sharpes: np.ndarray,
+    walk_forward_sharpes: np.ndarray,
+) -> bool:
+    time_required = max(1, int(np.ceil(len(time_sharpes) * 0.5)))
+    universe_required = max(1, len(universe_sharpes) - 1)
+    walk_forward_required = max(1, int(np.ceil(len(walk_forward_sharpes) * 0.5)))
+    return bool(
+        np.sum(time_sharpes > 0) >= time_required
+        and np.sum(universe_sharpes > 0) >= universe_required
+        and np.sum(walk_forward_sharpes > 0) >= walk_forward_required
+        and _safe_nanmedian(time_sharpes) > 0
+        and _safe_nanmedian(walk_forward_sharpes) > 0
+    )
+
+
+def _safe_nanmedian(values: np.ndarray) -> float:
+    finite = values[np.isfinite(values)]
+    return float(np.nanmedian(finite)) if finite.size else float("nan")
+
+
+def _safe_nanmin(values: np.ndarray) -> float:
+    finite = values[np.isfinite(values)]
+    return float(np.nanmin(finite)) if finite.size else float("nan")
 
 
 def factor_pnl_series(
