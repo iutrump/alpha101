@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from alpha101.data import FactorDataView
 from alpha101.factors.evaluation import StyleConfig, build_style_factors, residualize_style_factor
@@ -25,6 +26,7 @@ def cross_validate_candidates(
     report_mode: str = "validation",
     specific: bool = False,
     style_config: StyleConfig | None = None,
+    progress_bar: bool = False,
 ) -> tuple[list[dict[str, Any]], list[list[str]]]:
     if report_mode not in {"validation", "final"}:
         raise ValueError("report_mode must be 'validation' or 'final'")
@@ -72,7 +74,8 @@ def cross_validate_candidates(
     records: list[dict[str, Any]] = []
     factor_values: dict[str, pd.DataFrame] = {}
     pnl_values: dict[str, pd.Series] = {}
-    for candidate in candidates:
+    candidate_iter = tqdm(candidates, desc="Validating candidates") if progress_bar else candidates
+    for candidate in candidate_iter:
         expression = candidate["expression"]
         raw_factor = engine.evaluate(expression)
         factor = process_factor_wide_format(raw_factor).reindex(index=wide.index, columns=columns)
@@ -152,6 +155,7 @@ def validate_expressions_on_validation(
     walk_forward_folds: int,
     n_quantiles: int,
     extra_n_quantiles: tuple[int, ...] | list[int] = (),
+    progress_bar: bool = False,
 ) -> dict[str, dict[str, Any]]:
     validation_wide = wide_for_report_mode(wide, manifest, "validation")
     close = validation_wide["close"]
@@ -170,7 +174,8 @@ def validate_expressions_on_validation(
             quantiles.append(value)
 
     results: dict[str, dict[str, Any]] = {}
-    for expression in expressions:
+    expression_iter = tqdm(expressions, desc="Validating elite factors") if progress_bar else expressions
+    for expression in expression_iter:
         raw_factor = engine.evaluate(expression)
         factor = process_factor_wide_format(raw_factor).reindex(index=validation_wide.index, columns=columns)
         metrics: dict[str, Any] = {}

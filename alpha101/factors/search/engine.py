@@ -207,6 +207,7 @@ class FactorSearchEngine:
             walk_forward_folds=self.validation_walk_forward_folds,
             n_quantiles=self.n_quantiles,
             extra_n_quantiles=self.validation_extra_n_quantiles,
+            progress_bar=True,
         )
         for individual in candidates:
             metrics = individual["metrics"]

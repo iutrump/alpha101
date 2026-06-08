@@ -149,6 +149,7 @@ def main() -> None:
             pnl_corr_threshold=args.pnl_corr_threshold,
             report_mode=args.report_mode,
             specific=args.specific,
+            progress_bar=True,
             style_config=StyleConfig(
                 momentum_window=args.momentum_window,
                 volatility_window=args.volatility_window,
