@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,11 @@ def main() -> None:
         help="validation excludes held-out test data; final may report test metrics for frozen candidates.",
     )
     parser.add_argument(
+        "--final-evaluate",
+        action="store_true",
+        help="Alias for --report-mode final; use only after candidate expressions and selection rules are frozen.",
+    )
+    parser.add_argument(
         "--specific",
         action="store_true",
         help="Validate style-neutral residual factors instead of raw factors.",
@@ -84,6 +90,8 @@ def main() -> None:
         help="CSV or text file of manual expressions. CSV columns: name,expression. Text: one expression per line.",
     )
     args = parser.parse_args()
+    if args.final_evaluate:
+        args.report_mode = "final"
 
     summary_path = args.summary_csv
     if summary_path is None and not args.expression and args.expressions_file is None:
@@ -99,6 +107,7 @@ def main() -> None:
         candidates.extend(_select_candidates(rows, max_candidates=args.max_candidates))
     candidates.extend(_load_manual_candidates(args.expression or [], args.expressions_file))
     candidates = _dedupe_candidates(candidates)
+    candidate_source = _candidate_source_metadata(summary_path, args.expression or [], args.expressions_file)
 
     cfg = get_config(args.config)
     if args.timeframe is not None:
@@ -118,7 +127,15 @@ def main() -> None:
 
     forward_periods_values = args.forward_periods or [int(manifest.get("forward_periods", 1))]
     for forward_periods in forward_periods_values:
-        run_manifest = {**manifest, "forward_periods": int(forward_periods), "report_mode": args.report_mode}
+        run_manifest = {
+            **manifest,
+            "forward_periods": int(forward_periods),
+            "report_mode": args.report_mode,
+            "test_used_for_selection": False,
+            "final_evaluation": args.report_mode == "final",
+            "candidate_source": candidate_source,
+            "candidate_count": len(candidates),
+        }
         eval_wide = wide_for_report_mode(wide, run_manifest, args.report_mode)
         records, corr_clusters = cross_validate_candidates(
             candidates,
@@ -150,10 +167,13 @@ def main() -> None:
         suffix = "" if not suffix_parts else "_" + "_".join(suffix_parts)
         csv_path = out_dir / f"cross_validation_candidates{suffix}.csv"
         md_path = out_dir / f"cross_validation_report{suffix}.md"
+        manifest_out_path = out_dir / f"cross_validation_manifest{suffix}.json"
         _write_candidates_csv(csv_path, records)
         _write_report(md_path, summary_path, wide, records, corr_clusters, run_manifest)
+        manifest_out_path.write_text(json.dumps(run_manifest, indent=2, default=str), encoding="utf-8")
         print(f"Wrote {csv_path}")
         print(f"Wrote {md_path}")
+        print(f"Wrote {manifest_out_path}")
 
 
 def _select_candidates(rows: list[dict[str, Any]], *, max_candidates: int) -> list[dict[str, Any]]:
@@ -210,6 +230,37 @@ def _dedupe_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]
     for candidate in candidates:
         deduped.setdefault(candidate["expression"], candidate)
     return list(deduped.values())
+
+
+def _candidate_source_metadata(
+    summary_path: Path | None,
+    expressions: list[str],
+    expressions_file: Path | None,
+) -> dict[str, Any]:
+    sources: list[dict[str, Any]] = []
+    if summary_path is not None:
+        sources.append(_file_source_metadata("summary_csv", summary_path))
+    if expressions_file is not None:
+        sources.append(_file_source_metadata("expressions_file", expressions_file))
+    if expressions:
+        payload = "\n".join(expressions).encode("utf-8")
+        sources.append(
+            {
+                "type": "manual_expressions",
+                "count": len(expressions),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    return {"sources": sources}
+
+
+def _file_source_metadata(source_type: str, path: Path) -> dict[str, Any]:
+    payload = path.read_bytes()
+    return {
+        "type": source_type,
+        "path": str(path),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
 
 
 def _robust_summary_candidate(row: dict[str, Any]) -> bool:
@@ -303,6 +354,8 @@ def _write_report(
         "",
         f"Source: `{summary_path}`" if summary_path else "Source: manual expressions",
         f"Report mode: `{manifest.get('report_mode', 'validation')}`",
+        f"Final evaluation: `{bool(manifest.get('final_evaluation', False))}`",
+        f"Test used for selection: `{bool(manifest.get('test_used_for_selection', False))}`",
         (
             f"Data: {wide.index.min()} to {wide.index.max()}, "
             f"{len(wide)} bars, {wide['close'].shape[1]} symbols, "
