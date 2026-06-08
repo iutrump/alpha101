@@ -27,6 +27,24 @@ def test_factor_search_batch_evaluates_population():
     assert all("fitness" in metrics for metrics in results.values())
 
 
+def test_factor_search_batch_caches_search_visible_pnl():
+    search_engine = FactorSearchEngine(make_wide_data(), n_quantiles=2)
+    search_engine.min_obs = 1
+
+    results = search_engine.evaluate_factors_batch(
+        {
+            "alpha_a": "rank(ts_mean(close, 2))",
+        },
+        backend="serial",
+        progress_bar=False,
+    )
+
+    expression = results["alpha_a"]["expression"]
+    assert expression in search_engine._pnl_dedupe_cache
+    assert "_search_visible_pnl_values" not in results["alpha_a"]
+    assert len(search_engine._pnl_dedupe_cache[expression]) > 0
+
+
 def test_factor_search_seed_reproduces_first_expression():
     first_engine = FactorSearchEngine(make_wide_data(), n_quantiles=2, seed=7)
     first_expression = first_engine.new_random_expression()

@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 
 from alpha101.factors.evaluation import forward_returns_array, score_factor_search_array
+from alpha101.factors.evaluation.scoring import _time_segment_slices, factor_pnl_series_array
 from alpha101.factors.expression.runtime import build_eval_env, normalize_expression_code
 from alpha101.factors.expression.worker import prepare_factor_result, result_is_all_nan
 
@@ -74,9 +75,10 @@ def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str |
         target_indices = _SEARCH_WORKER_CLOSE_COLUMNS.get_indexer(factor_columns)
         if (target_indices < 0).any():
             raise ValueError("Factor contains symbols missing from close target")
+        target_values = _SEARCH_WORKER_TARGET[:, target_indices]
         metrics = score_factor_search_array(
             factor_values,
-            _SEARCH_WORKER_TARGET[:, target_indices],
+            target_values,
             n_quantiles=_SEARCH_WORKER_N_QUANTILES,
             min_segment_obs=_SEARCH_WORKER_MIN_OBS,
             segment_ratios=_SEARCH_WORKER_SEGMENT_RATIOS,
@@ -84,6 +86,14 @@ def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str |
         )
         if metrics["obs_count"] < _SEARCH_WORKER_MIN_OBS:
             raise ValueError(f"Insufficient observations: {metrics['obs_count']} < {_SEARCH_WORKER_MIN_OBS}")
+        slices = _time_segment_slices(factor_values.shape[0], _SEARCH_WORKER_SEGMENT_RATIOS)
+        visible_slice = slice(slices["train"].start, slices["valid"].stop)
+        metrics["_search_visible_pnl_values"] = factor_pnl_series_array(
+            factor_values[visible_slice],
+            target_values[visible_slice],
+            n_quantiles=_SEARCH_WORKER_N_QUANTILES,
+            transaction_cost=_SEARCH_WORKER_TRANSACTION_COST,
+        ).tolist()
         return factor_name, metrics, None, None
     except Exception as exc:
         return factor_name, None, str(exc), traceback.format_exc()

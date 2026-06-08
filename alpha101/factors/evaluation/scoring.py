@@ -93,6 +93,55 @@ def score_factor_cross_section_array(
     )
 
 
+def factor_pnl_series_array(
+    factor: np.ndarray,
+    target: np.ndarray,
+    *,
+    n_quantiles: int = 5,
+    transaction_cost: float = 0.001,
+) -> np.ndarray:
+    factor = np.asarray(factor, dtype=float)
+    target = np.asarray(target, dtype=float)
+    if factor.shape != target.shape:
+        raise ValueError(f"factor and target shape mismatch: {factor.shape} != {target.shape}")
+
+    valid = np.isfinite(factor) & np.isfinite(target)
+    pnl = np.full(factor.shape[0], np.nan, dtype=np.float64)
+    prev_long_idx: np.ndarray | None = None
+    prev_short_idx: np.ndarray | None = None
+
+    for date_idx in range(factor.shape[0]):
+        mask = valid[date_idx]
+        n_valid = int(mask.sum())
+        if n_valid < n_quantiles:
+            continue
+
+        valid_factor = factor[date_idx][mask]
+        valid_target = target[date_idx][mask]
+        valid_idx = np.flatnonzero(mask)
+        base_group_size, remainder = divmod(n_valid, n_quantiles)
+        short_count = base_group_size + (1 if remainder else 0)
+        long_count = base_group_size
+        short_idx = np.argpartition(valid_factor, short_count - 1)[:short_count]
+        long_start = n_valid - long_count
+        long_idx = np.argpartition(valid_factor, long_start)[long_start:]
+        long_global_idx = valid_idx[long_idx]
+        short_global_idx = valid_idx[short_idx]
+
+        gross = float(valid_target[long_idx].mean() - valid_target[short_idx].mean())
+        if prev_long_idx is None or prev_short_idx is None:
+            turnover = 0.0
+        else:
+            long_turnover = _turnover_ratio(long_global_idx, prev_long_idx)
+            short_turnover = _turnover_ratio(short_global_idx, prev_short_idx)
+            turnover = float((long_turnover + short_turnover) * 0.5)
+        pnl[date_idx] = gross - turnover * float(transaction_cost)
+        prev_long_idx = long_global_idx
+        prev_short_idx = short_global_idx
+
+    return pnl
+
+
 def score_factor_search_array(
     factor: np.ndarray,
     target: np.ndarray,

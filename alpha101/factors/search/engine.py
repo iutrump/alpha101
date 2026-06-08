@@ -290,6 +290,12 @@ class FactorSearchEngine:
         self._pnl_dedupe_cache[expression] = pnl
         return pnl
 
+    def _cache_search_visible_pnl(self, expression: str, metrics: dict) -> None:
+        values = metrics.pop("_search_visible_pnl_values", None)
+        if values is None:
+            return
+        self._pnl_dedupe_cache[expression] = pd.Series(values, dtype=float)
+
     def expression_family(self, expr: str) -> str:
         norm = self.normalize_expression(expr)
         norm = re.sub(r"\b\d+(?:\.\d+)?\b", "#", norm)
@@ -382,6 +388,7 @@ class FactorSearchEngine:
                     raise RuntimeError(error_traceback or error)
                 if metrics is None:
                     raise ValueError("Evaluation returned no metrics")
+                self._cache_search_visible_pnl(factor_expr, metrics)
 
                 complexity = self.generator.calculate_complexity(factor_expr)
                 metrics.update(
