@@ -45,6 +45,7 @@ def score_factor_search(
     min_segment_obs: int = 30,
     segment_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
     transaction_cost: float = 0.001,
+    mode: str = "search",
 ) -> dict:
     if preprocess:
         factor = process_factor_wide_format(factor)
@@ -56,6 +57,7 @@ def score_factor_search(
         min_segment_obs=min_segment_obs,
         segment_ratios=segment_ratios,
         transaction_cost=transaction_cost,
+        mode=mode,
     )
 
 
@@ -99,6 +101,7 @@ def score_factor_search_array(
     segment_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
     min_segment_obs: int = 30,
     transaction_cost: float = 0.001,
+    mode: str = "search",
 ) -> dict:
     factor = np.asarray(factor, dtype=float)
     target = np.asarray(target, dtype=float)
@@ -106,19 +109,22 @@ def score_factor_search_array(
         raise ValueError(f"factor and target shape mismatch: {factor.shape} != {target.shape}")
 
     slices = _time_segment_slices(factor.shape[0], segment_ratios)
-    segment_metrics = {
-        name: _score_factor_segment(
+    if mode not in {"search", "final"}:
+        raise ValueError("mode must be 'search' or 'final'")
+
+    segment_names = ("train", "valid") if mode == "search" else ("train", "valid", "test")
+    segment_metrics = {}
+    for name in segment_names:
+        seg_slice = slices[name]
+        segment_metrics[name] = _score_factor_segment(
             factor[seg_slice],
             target[seg_slice],
             n_quantiles=n_quantiles,
             transaction_cost=transaction_cost,
         )
-        for name, seg_slice in slices.items()
-    }
 
     train = segment_metrics["train"]
     valid = segment_metrics["valid"]
-    test = segment_metrics["test"]
     if train["obs_count"] < min_segment_obs:
         raise ValueError(f"Insufficient train observations: {train['obs_count']} < {min_segment_obs}")
     if valid["obs_count"] < min_segment_obs:
@@ -130,28 +136,36 @@ def score_factor_search_array(
     stability_score = float(min_abs / max_abs) if max_abs > 0 else 0.0
     fitness = float(robust_fitness * stability_score)
 
-    return {
+    out = {
         **valid,
         "fitness": fitness,
         "robust_fitness": float(robust_fitness),
         "stability_score": stability_score,
+        "scoring_mode": mode,
         "train_fitness": float(train["fitness"]),
         "valid_fitness": float(valid["fitness"]),
-        "test_fitness": float(test["fitness"]),
         "train_sharpe": float(train["sharpe_ratio"]),
         "valid_sharpe": float(valid["sharpe_ratio"]),
-        "test_sharpe": float(test["sharpe_ratio"]),
         "train_returns": float(train["returns"]),
         "valid_returns": float(valid["returns"]),
-        "test_returns": float(test["returns"]),
         "train_ic_ir": float(train["ic_ir"]),
         "valid_ic_ir": float(valid["ic_ir"]),
-        "test_ic_ir": float(test["ic_ir"]),
         "train_obs_count": int(train["obs_count"]),
         "valid_obs_count": int(valid["obs_count"]),
-        "test_obs_count": int(test["obs_count"]),
         "segment_metrics": segment_metrics,
     }
+    if mode == "final":
+        test = segment_metrics["test"]
+        out.update(
+            {
+                "test_fitness": float(test["fitness"]),
+                "test_sharpe": float(test["sharpe_ratio"]),
+                "test_returns": float(test["returns"]),
+                "test_ic_ir": float(test["ic_ir"]),
+                "test_obs_count": int(test["obs_count"]),
+            }
+        )
+    return out
 
 
 def _score_factor_segment(

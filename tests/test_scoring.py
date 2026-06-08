@@ -61,7 +61,7 @@ def test_array_score_uses_simple_returns_and_cost_adjusted_sharpe():
     assert np.isclose(no_cost["returns"], no_cost["returns_before_cost"])
 
 
-def test_search_score_uses_train_valid_for_fitness_and_reports_test():
+def test_search_score_uses_train_valid_for_fitness_and_hides_test():
     n_dates = 80
     factor = np.tile(np.arange(4, dtype=float), (n_dates, 1))
     target = np.tile(np.array([-0.01, -0.005, 0.005, 0.01], dtype=float), (n_dates, 1))
@@ -79,5 +79,25 @@ def test_search_score_uses_train_valid_for_fitness_and_reports_test():
     expected *= min_abs / max_abs if max_abs > 0 else 0.0
 
     assert np.isclose(metrics["fitness"], expected)
+    assert metrics["scoring_mode"] == "search"
+    assert "test_fitness" not in metrics
+    assert "test" not in metrics["segment_metrics"]
+
+
+def test_final_score_reports_test_segment():
+    n_dates = 80
+    factor = np.tile(np.arange(4, dtype=float), (n_dates, 1))
+    target = np.tile(np.array([-0.01, -0.005, 0.005, 0.01], dtype=float), (n_dates, 1))
+    metrics = score_factor_search_array(
+        factor,
+        target,
+        n_quantiles=2,
+        min_segment_obs=5,
+        transaction_cost=0.0,
+        mode="final",
+    )
+
+    assert metrics["scoring_mode"] == "final"
     assert "test_fitness" in metrics
     assert metrics["test_obs_count"] > 0
+    assert "test" in metrics["segment_metrics"]
