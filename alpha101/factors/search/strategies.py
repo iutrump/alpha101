@@ -57,6 +57,12 @@ def genetic_search(
         rank_started = time.perf_counter()
         apply_diversity_penalty(population, search_engine)
         population.sort(key=lambda x: x["fitness"], reverse=True)
+        elite_count = max(1, population_size // 5)
+        validation_started = time.perf_counter()
+        validated_elite = search_engine.validate_elite(population[:elite_count], gen + 1)
+        if validated_elite:
+            population.sort(key=lambda x: x["fitness"], reverse=True)
+        validation_elapsed = time.perf_counter() - validation_started
         if best_overall is None or population[0]["fitness"] > best_overall["fitness"]:
             best_overall = population[0].copy()
         rank_elapsed = time.perf_counter() - rank_started
@@ -69,7 +75,6 @@ def genetic_search(
         save_elapsed = time.perf_counter() - save_started
 
         reproduce_started = time.perf_counter()
-        elite_count = max(1, population_size // 5)
         new_population = population[:elite_count]
         next_seen = {ind["expression"] for ind in new_population}
         while len(new_population) < population_size:
@@ -101,10 +106,12 @@ def genetic_search(
                 f"evaluate={evaluate_elapsed:.3f}s "
                 f"score_assign={scoring_elapsed:.3f}s "
                 f"rank={rank_elapsed:.3f}s "
+                f"elite_validation={validation_elapsed:.3f}s "
                 f"save={save_elapsed:.3f}s "
                 f"reproduce={reproduce_elapsed:.3f}s "
                 f"total={gen_elapsed:.3f}s "
                 f"evaluated={len(pending)} "
+                f"validated_elite={validated_elite} "
                 f"cache_size={len(search_engine.evaluation_cache)}"
             )
 

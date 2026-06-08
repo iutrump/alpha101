@@ -33,6 +33,18 @@ def main() -> None:
     parser.add_argument("--min-valid-ic-ir", type=float, default=None, help="Optional validation IC IR floor for GP selection.")
     parser.add_argument("--validation-failure-penalty", type=float, default=0.0, help="Penalty when validation floors are not met.")
     parser.add_argument("--train-valid-gap-penalty", type=float, default=0.0, help="Penalty per Sharpe point of train-valid gap.")
+    parser.add_argument("--validation-interval", type=int, default=5, help="Run elite robustness validation every N generations; <=0 disables it.")
+    parser.add_argument("--validation-time-folds", type=int, default=4)
+    parser.add_argument("--validation-universe-folds", type=int, default=3)
+    parser.add_argument("--validation-walk-forward-folds", type=int, default=4)
+    parser.add_argument(
+        "--validation-extra-n-quantiles",
+        type=int,
+        nargs="*",
+        default=[10],
+        help="Extra quantile counts checked during elite validation, e.g. 10.",
+    )
+    parser.add_argument("--cv-failure-penalty", type=float, default=0.5, help="Penalty per failed elite robustness validation set.")
     parser.add_argument(
         "--exclude-fields",
         nargs="*",
@@ -76,6 +88,12 @@ def main() -> None:
         min_valid_ic_ir=args.min_valid_ic_ir,
         validation_failure_penalty=args.validation_failure_penalty,
         train_valid_gap_penalty=args.train_valid_gap_penalty,
+        validation_interval=args.validation_interval,
+        validation_time_folds=args.validation_time_folds,
+        validation_universe_folds=args.validation_universe_folds,
+        validation_walk_forward_folds=args.validation_walk_forward_folds,
+        validation_extra_n_quantiles=args.validation_extra_n_quantiles,
+        cv_failure_penalty=args.cv_failure_penalty,
     )
     search_engine.save_manifest(cli_args=vars(args))
 

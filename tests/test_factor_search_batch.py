@@ -137,3 +137,34 @@ def test_diversity_penalty_recomputes_from_base_fitness():
 
     assert np.isclose(population[0]["fitness"], 2.0)
     assert population[0]["metrics"]["family_duplicate_count"] == 0
+
+
+def test_factor_search_validates_elite_on_interval():
+    search_engine = FactorSearchEngine(
+        make_wide_data(),
+        n_quantiles=2,
+        segment_ratios=[0.25, 0.50, 0.25],
+        validation_interval=2,
+        validation_time_folds=2,
+        validation_universe_folds=2,
+        validation_walk_forward_folds=2,
+        validation_extra_n_quantiles=[3],
+        cv_failure_penalty=0.25,
+    )
+    elite = [
+        {
+            "expression": "rank(close)",
+            "base_fitness": 1.0,
+            "fitness": 1.0,
+            "metrics": {"status": "success", "fitness": 1.0},
+        }
+    ]
+
+    assert search_engine.validate_elite(elite, generation=1) == 0
+    assert "cv_time_pos_folds" not in elite[0]["metrics"]
+
+    assert search_engine.validate_elite(elite, generation=2) == 1
+    assert "cv_time_pos_folds" in elite[0]["metrics"]
+    assert "cv_walk_forward_pos_folds" in elite[0]["metrics"]
+    assert "cv_nq3_time_pos_folds" in elite[0]["metrics"]
+    assert "test_sharpe" not in elite[0]["metrics"]

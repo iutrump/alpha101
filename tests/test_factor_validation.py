@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from alpha101.factors.validation import annotate_pnl_redundancy
+from alpha101.factors.validation import validate_expressions_on_validation
 from alpha101.factors.validation import wide_for_report_mode
 from tests.test_expression_runtime import make_wide_data
 
@@ -47,3 +48,30 @@ def test_annotate_pnl_redundancy_marks_similar_pnl():
     assert by_expression["alpha_b"]["nearest_pnl_corr_expression"] == "alpha_a"
     assert np.isclose(by_expression["alpha_b"]["max_pnl_corr"], 1.0)
     assert by_expression["alpha_c"]["redundant_by_pnl"] is False
+
+
+def test_validate_expressions_on_validation_includes_extra_quantile_metrics():
+    wide = make_wide_data()
+    manifest = {
+        "segment_ratios": [0.25, 0.50, 0.25],
+        "forward_periods": 1,
+        "transaction_cost": 0.0,
+    }
+
+    results = validate_expressions_on_validation(
+        ["rank(close)"],
+        wide,
+        manifest=manifest,
+        time_folds=2,
+        universe_folds=2,
+        walk_forward_folds=2,
+        n_quantiles=2,
+        extra_n_quantiles=[3],
+    )
+
+    metrics = results["rank(close)"]
+    assert "cv_time_pos_folds" in metrics
+    assert "cv_walk_forward_pos_folds" in metrics
+    assert "cv_nq3_time_pos_folds" in metrics
+    assert "cv_nq3_walk_forward_pos_folds" in metrics
+    assert "test_sharpe" not in metrics

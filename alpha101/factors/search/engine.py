@@ -22,6 +22,7 @@ from alpha101.factors.evaluation import score_factor_search
 from alpha101.factors.search.results import SearchResultStore
 from alpha101.factors.search.strategies import genetic_search
 from alpha101.factors.search.worker import evaluate_search_item, init_search_worker
+from alpha101.factors.validation import validate_expressions_on_validation
 
 
 class FactorSearchEngine:
@@ -46,6 +47,12 @@ class FactorSearchEngine:
         min_valid_ic_ir: float | None = None,
         validation_failure_penalty: float = 0.0,
         train_valid_gap_penalty: float = 0.0,
+        validation_interval: int = 5,
+        validation_time_folds: int = 4,
+        validation_universe_folds: int = 3,
+        validation_walk_forward_folds: int = 4,
+        validation_extra_n_quantiles: tuple[int, ...] | list[int] = (10,),
+        cv_failure_penalty: float = 0.5,
     ):
         self.wide_data = wide_data
         self.alpha_obj = FactorDataView(wide_data)
@@ -76,6 +83,12 @@ class FactorSearchEngine:
         self.min_valid_ic_ir = None if min_valid_ic_ir is None else float(min_valid_ic_ir)
         self.validation_failure_penalty = float(validation_failure_penalty)
         self.train_valid_gap_penalty = float(train_valid_gap_penalty)
+        self.validation_interval = int(validation_interval)
+        self.validation_time_folds = int(validation_time_folds)
+        self.validation_universe_folds = int(validation_universe_folds)
+        self.validation_walk_forward_folds = int(validation_walk_forward_folds)
+        self.validation_extra_n_quantiles = tuple(int(value) for value in validation_extra_n_quantiles)
+        self.cv_failure_penalty = float(cv_failure_penalty)
         self.min_obs = 30
         self._metrics_executor: ProcessPoolExecutor | None = None
 
@@ -94,6 +107,12 @@ class FactorSearchEngine:
             "min_valid_ic_ir": self.min_valid_ic_ir,
             "validation_failure_penalty": self.validation_failure_penalty,
             "train_valid_gap_penalty": self.train_valid_gap_penalty,
+            "validation_interval": self.validation_interval,
+            "validation_time_folds": self.validation_time_folds,
+            "validation_universe_folds": self.validation_universe_folds,
+            "validation_walk_forward_folds": self.validation_walk_forward_folds,
+            "validation_extra_n_quantiles": self.validation_extra_n_quantiles,
+            "cv_failure_penalty": self.cv_failure_penalty,
             "n_quantiles": self.n_quantiles,
             "forward_periods": self.forward_periods,
             "transaction_cost": self.transaction_cost,
@@ -162,6 +181,52 @@ class FactorSearchEngine:
         if not validation_pass:
             fitness -= self.validation_failure_penalty
         return fitness
+
+    def validate_elite(self, elite: list[dict], generation: int) -> int:
+        if self.validation_interval <= 0 or generation % self.validation_interval != 0:
+            return 0
+        candidates = [
+            individual
+            for individual in elite
+            if individual.get("metrics") and individual["metrics"].get("status") == "success"
+        ]
+        if not candidates:
+            return 0
+        expressions = [individual["expression"] for individual in candidates]
+        manifest = {
+            "forward_periods": self.forward_periods,
+            "transaction_cost": self.transaction_cost,
+            "segment_ratios": self.segment_ratios,
+        }
+        validation_metrics = validate_expressions_on_validation(
+            expressions,
+            self.wide_data,
+            manifest=manifest,
+            time_folds=self.validation_time_folds,
+            universe_folds=self.validation_universe_folds,
+            walk_forward_folds=self.validation_walk_forward_folds,
+            n_quantiles=self.n_quantiles,
+            extra_n_quantiles=self.validation_extra_n_quantiles,
+        )
+        for individual in candidates:
+            metrics = individual["metrics"]
+            expr_metrics = validation_metrics.get(individual["expression"], {})
+            metrics.update(expr_metrics)
+            penalty = self.cv_failure_penalty * self._cv_failure_count(expr_metrics)
+            metrics["cv_failure_penalty"] = penalty
+            base_fitness = individual.get("base_fitness", individual.get("fitness", -999.0))
+            individual["fitness"] = float(base_fitness) - penalty
+            metrics["selection_fitness"] = individual["fitness"]
+        return len(candidates)
+
+    def _cv_failure_count(self, metrics: dict) -> int:
+        count = 0
+        if metrics.get("cv_pass") is False:
+            count += 1
+        for quantile in self.validation_extra_n_quantiles:
+            if metrics.get(f"cv_nq{int(quantile)}_pass") is False:
+                count += 1
+        return count
 
     def expression_family(self, expr: str) -> str:
         norm = self.normalize_expression(expr)
