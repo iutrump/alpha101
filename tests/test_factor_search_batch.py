@@ -93,6 +93,23 @@ def test_factor_search_selection_fitness_penalizes_validation_failure():
     assert np.isclose(metrics["train_valid_sharpe_gap"], 1.5)
 
 
+def test_factor_search_selection_fitness_ignores_test_metrics():
+    search_engine = FactorSearchEngine(make_wide_data(), n_quantiles=2, min_valid_sharpe=0.0)
+    base_metrics = {
+        "status": "success",
+        "fitness": 2.0,
+        "train_sharpe": 1.0,
+        "valid_sharpe": 1.0,
+        "valid_ic_ir": 0.5,
+    }
+    with_test_metrics = {**base_metrics, "test_sharpe": -100.0, "test_ic_ir": -100.0}
+
+    assert np.isclose(
+        search_engine.selection_fitness(base_metrics),
+        search_engine.selection_fitness(with_test_metrics),
+    )
+
+
 def test_diversity_penalty_recomputes_from_base_fitness():
     search_engine = FactorSearchEngine(make_wide_data(), n_quantiles=2, diversity_penalty=0.25)
     population = [
