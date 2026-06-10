@@ -6,6 +6,7 @@ import pandas as pd
 from alpha101.factors.evaluation.metrics import (
     information_ratio,
     max_drawdown,
+    periods_per_year,
     safe_float,
     sharpe_ratio,
     win_rate,
@@ -24,6 +25,7 @@ def score_factor_cross_section(
     n_quantiles: int = 5,
     forward_periods: int = 1,
     preprocess: bool = True,
+    annualization: float | None = None,
 ) -> dict:
     if preprocess:
         factor = process_factor_wide_format(factor)
@@ -32,6 +34,7 @@ def score_factor_cross_section(
         factor.to_numpy(dtype=float, copy=False),
         target.to_numpy(dtype=float, copy=False),
         n_quantiles=n_quantiles,
+        annualization=annualization if annualization is not None else periods_per_year("1d", forward_periods),
     )
 
 
@@ -46,6 +49,7 @@ def score_factor_search(
     segment_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
     transaction_cost: float = 0.001,
     mode: str = "search",
+    annualization: float | None = None,
 ) -> dict:
     if preprocess:
         factor = process_factor_wide_format(factor)
@@ -58,6 +62,7 @@ def score_factor_search(
         segment_ratios=segment_ratios,
         transaction_cost=transaction_cost,
         mode=mode,
+        annualization=annualization if annualization is not None else periods_per_year("1d", forward_periods),
     )
 
 
@@ -79,6 +84,7 @@ def score_factor_cross_section_array(
     *,
     n_quantiles: int = 5,
     transaction_cost: float = 0.001,
+    annualization: float = 365.0,
 ) -> dict:
     factor = np.asarray(factor, dtype=float)
     target = np.asarray(target, dtype=float)
@@ -90,6 +96,7 @@ def score_factor_cross_section_array(
         target,
         n_quantiles=n_quantiles,
         transaction_cost=transaction_cost,
+        annualization=annualization,
     )
 
 
@@ -151,6 +158,7 @@ def score_factor_search_array(
     min_segment_obs: int = 30,
     transaction_cost: float = 0.001,
     mode: str = "search",
+    annualization: float = 365.0,
 ) -> dict:
     factor = np.asarray(factor, dtype=float)
     target = np.asarray(target, dtype=float)
@@ -170,6 +178,7 @@ def score_factor_search_array(
             target[seg_slice],
             n_quantiles=n_quantiles,
             transaction_cost=transaction_cost,
+            annualization=annualization,
         )
 
     train = segment_metrics["train"]
@@ -223,6 +232,7 @@ def _score_factor_segment(
     *,
     n_quantiles: int,
     transaction_cost: float,
+    annualization: float,
 ) -> dict:
     n_dates = factor.shape[0]
     valid = np.isfinite(factor) & np.isfinite(target)
@@ -287,8 +297,8 @@ def _score_factor_segment(
     # Search metrics use simple-interest accumulation. This avoids letting path
     # compounding dominate factor selection during genetic search.
     equity = pd.Series(1.0 + np.nan_to_num(pnl_net, nan=0.0).cumsum(), dtype=float)
-    sharpe_gross = sharpe_ratio(pnl_gross, scale=np.sqrt(max(len(pnl_gross), 1)))
-    sharpe_net = sharpe_ratio(pnl_net, scale=np.sqrt(max(len(pnl_net), 1)))
+    sharpe_gross = sharpe_ratio(pnl_gross, scale=np.sqrt(float(annualization)))
+    sharpe_net = sharpe_ratio(pnl_net, scale=np.sqrt(float(annualization)))
     total_return_gross = safe_float(np.nansum(pnl_gross))
     total_return_net = safe_float(np.nansum(pnl_net))
     avg_turnover = safe_float(np.nanmean(turnover_arr)) if turnover_arr.size else 0.0

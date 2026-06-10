@@ -38,6 +38,20 @@ def sharpe_ratio(returns, *, scale: float = 1.0, eps: float = 1e-12) -> float:
     return mean / std * scale if std > eps else 0.0
 
 
+def periods_per_year(freq: str = "1d", periods: int = 1) -> float:
+    """Return annualization periods for a bar frequency and holding period."""
+    freq_value = str(freq)
+    if freq_value.endswith("d"):
+        freq_value = f"{freq_value[:-1]}D"
+    try:
+        seconds = pd.to_timedelta(freq_value).total_seconds() * max(int(periods), 1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Unsupported frequency for annualization: {freq}") from exc
+    if seconds <= 0:
+        raise ValueError(f"Frequency must be positive for annualization: {freq}")
+    return float(pd.Timedelta(days=365).total_seconds() / seconds)
+
+
 def information_ratio(values, eps: float = 1e-8) -> tuple[float, float, float]:
     series = pd.Series(values, dtype=float).replace([np.inf, -np.inf], np.nan)
     mean = safe_float(series.mean())

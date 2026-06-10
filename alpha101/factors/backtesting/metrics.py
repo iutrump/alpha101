@@ -10,6 +10,7 @@ from alpha101.factors.backtesting.config import LongShortBacktestConfig
 from alpha101.factors.evaluation.metrics import (
     information_ratio,
     max_drawdown_array,
+    periods_per_year,
     profit_loss_ratio,
     safe_float,
     sharpe_ratio,
@@ -31,11 +32,12 @@ def compute_metrics(
     cum_pnl_net = np.cumprod(1.0 + daily_pnl_net)
     max_drawdown = max_drawdown_array(cum_pnl)
     max_drawdown_net = max_drawdown_array(cum_pnl_net)
+    annualization = periods_per_year(config.freq, config.k_bars)
 
     returns_mean = float(np.mean(daily_pnl))
-    sharpe = sharpe_ratio(daily_pnl, scale=np.sqrt(len(daily_pnl)))
+    sharpe = sharpe_ratio(daily_pnl, scale=np.sqrt(annualization))
     returns_mean_net = float(np.mean(daily_pnl_net))
-    sharpe_net = sharpe_ratio(daily_pnl_net, scale=np.sqrt(len(daily_pnl_net)))
+    sharpe_net = sharpe_ratio(daily_pnl_net, scale=np.sqrt(annualization))
     total_ret = float(np.prod(1.0 + daily_pnl) - 1.0)
     total_ret_net = float(np.prod(1.0 + daily_pnl_net) - 1.0)
     n_years = len(daily_pnl) * pd.to_timedelta(config.freq).total_seconds() * config.k_bars / (365.25 * 24 * 3600)

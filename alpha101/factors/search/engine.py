@@ -18,7 +18,7 @@ from alpha101.data import FactorDataView
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.expression.runtime import alpha_fields
 from alpha101.factors.generation import FactorGenerator
-from alpha101.factors.evaluation import forward_returns, score_factor_search
+from alpha101.factors.evaluation import forward_returns, periods_per_year, score_factor_search
 from alpha101.factors.evaluation.scoring import _time_segment_slices
 from alpha101.factors.operator_lib import process_factor_wide_format
 from alpha101.factors.search.results import SearchResultStore
@@ -72,8 +72,10 @@ class FactorSearchEngine:
             if not self.generator.data_fields:
                 raise ValueError("exclude_fields removed all generator data fields")
         self.results = SearchResultStore(output_dir, timeframe)
+        self.timeframe = timeframe
         self.n_quantiles = n_quantiles
         self.forward_periods = forward_periods
+        self.annualization = periods_per_year(timeframe, forward_periods)
         self.seed = seed
         cfg = get_config()
         self.transaction_cost = float(cfg.round_trip_fee if transaction_cost is None else transaction_cost)
@@ -128,6 +130,8 @@ class FactorSearchEngine:
             "pnl_redundancy_penalty": self.pnl_redundancy_penalty,
             "n_quantiles": self.n_quantiles,
             "forward_periods": self.forward_periods,
+            "timeframe": self.timeframe,
+            "annualization": self.annualization,
             "transaction_cost": self.transaction_cost,
             "segment_ratios": self.segment_ratios,
             "symbols": list(self.wide_data["close"].columns),
@@ -431,6 +435,7 @@ class FactorSearchEngine:
                 self.min_obs,
                 self.segment_ratios,
                 self.transaction_cost,
+                self.annualization,
             )
             iterator = tqdm(items, desc="Evaluating factors") if progress_bar else items
             return {
@@ -457,6 +462,7 @@ class FactorSearchEngine:
                     self.min_obs,
                     self.segment_ratios,
                     self.transaction_cost,
+                    self.annualization,
                 ),
             ) as executor:
                 self._collect_metric_results(executor, items, results, pbar)
@@ -509,6 +515,7 @@ class FactorSearchEngine:
             min_segment_obs=self.min_obs,
             segment_ratios=self.segment_ratios,
             transaction_cost=self.transaction_cost,
+            annualization=self.annualization,
         )
 
     def _evaluate_expression(self, factor_expr: str):

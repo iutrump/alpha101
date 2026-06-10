@@ -5,6 +5,7 @@ import pandas as pd
 
 from alpha101.factors.evaluation import (
     forward_returns_array,
+    periods_per_year,
     score_factor_cross_section,
     score_factor_cross_section_array,
     score_factor_search_array,
@@ -59,6 +60,29 @@ def test_array_score_uses_simple_returns_and_cost_adjusted_sharpe():
     assert with_cost["sharpe_ratio"] <= no_cost["sharpe_ratio"]
     assert np.isclose(with_cost["returns"], with_cost["returns_after_cost"])
     assert np.isclose(no_cost["returns"], no_cost["returns_before_cost"])
+
+
+def test_score_sharpe_uses_annualized_periods():
+    factor = np.tile(np.arange(4, dtype=float), (6, 1))
+    multipliers = np.array([1.0, 0.6, 1.2, 0.8, 1.4, 0.9])[:, None]
+    target = np.array([-0.01, -0.005, 0.005, 0.01], dtype=float) * multipliers
+
+    daily = score_factor_cross_section_array(
+        factor,
+        target,
+        n_quantiles=2,
+        transaction_cost=0.0,
+        annualization=periods_per_year("1d"),
+    )
+    hourly = score_factor_cross_section_array(
+        factor,
+        target,
+        n_quantiles=2,
+        transaction_cost=0.0,
+        annualization=periods_per_year("1h"),
+    )
+
+    assert np.isclose(hourly["sharpe_ratio"], daily["sharpe_ratio"] * np.sqrt(24.0))
 
 
 def test_search_score_uses_train_valid_for_fitness_and_hides_test():

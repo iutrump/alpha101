@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from alpha101.data import FactorDataView
 from alpha101.factors.evaluation import StyleConfig, build_style_factors, residualize_style_factor
+from alpha101.factors.evaluation.metrics import periods_per_year
 from alpha101.factors.evaluation.scoring import _score_factor_segment, _time_segment_slices, forward_returns
 from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.operator_lib import process_factor_wide_format
@@ -35,6 +36,9 @@ def cross_validate_candidates(
     n_quantiles = int(manifest.get("n_quantiles", 5))
     forward_periods = int(manifest.get("forward_periods", 1))
     transaction_cost = float(manifest.get("transaction_cost", 0.001))
+    annualization = float(
+        manifest.get("annualization", periods_per_year(str(manifest.get("timeframe", "1d")), forward_periods))
+    )
 
     engine = FastExpressionEngine(FactorDataView(wide))
     target = forward_returns(close, periods=forward_periods)
@@ -69,6 +73,7 @@ def cross_validate_candidates(
             target_slice.to_numpy(dtype=float, copy=False),
             n_quantiles=n_quantiles,
             transaction_cost=transaction_cost,
+            annualization=annualization,
         )
 
     records: list[dict[str, Any]] = []
@@ -162,6 +167,9 @@ def validate_expressions_on_validation(
     columns = list(close.columns)
     forward_periods = int(manifest.get("forward_periods", 1))
     transaction_cost = float(manifest.get("transaction_cost", 0.001))
+    annualization = float(
+        manifest.get("annualization", periods_per_year(str(manifest.get("timeframe", "1d")), forward_periods))
+    )
     target = forward_returns(close, periods=forward_periods)
     engine = FastExpressionEngine(FactorDataView(validation_wide))
     time_splits = time_split_indexes(validation_wide.index, time_folds)
@@ -190,6 +198,7 @@ def validate_expressions_on_validation(
                     walk_forward_splits=walk_forward_splits,
                     n_quantiles=quantile,
                     transaction_cost=transaction_cost,
+                    annualization=annualization,
                     prefix=prefix,
                 )
             )
@@ -271,6 +280,7 @@ def _robustness_metrics_for_quantile(
     walk_forward_splits: list[tuple[str, pd.Index]],
     n_quantiles: int,
     transaction_cost: float,
+    annualization: float,
     prefix: str,
 ) -> dict[str, Any]:
     def score(*, dates=None, cols=None) -> dict[str, Any]:
@@ -284,6 +294,7 @@ def _robustness_metrics_for_quantile(
             target_slice.to_numpy(dtype=float, copy=False),
             n_quantiles=n_quantiles,
             transaction_cost=transaction_cost,
+            annualization=annualization,
         )
 
     time_metrics = [

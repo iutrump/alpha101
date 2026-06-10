@@ -19,6 +19,7 @@ _SEARCH_WORKER_FORWARD_PERIODS = 1
 _SEARCH_WORKER_MIN_OBS = 30
 _SEARCH_WORKER_SEGMENT_RATIOS = (0.70, 0.15, 0.15)
 _SEARCH_WORKER_TRANSACTION_COST = 0.001
+_SEARCH_WORKER_ANNUALIZATION = 365.0
 
 
 def init_search_worker(
@@ -29,6 +30,7 @@ def init_search_worker(
     min_obs: int,
     segment_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
     transaction_cost: float = 0.001,
+    annualization: float = 365.0,
 ) -> None:
     global _SEARCH_WORKER_ENV_BASE
     global _SEARCH_WORKER_CLOSE_COLUMNS
@@ -38,6 +40,7 @@ def init_search_worker(
     global _SEARCH_WORKER_MIN_OBS
     global _SEARCH_WORKER_SEGMENT_RATIOS
     global _SEARCH_WORKER_TRANSACTION_COST
+    global _SEARCH_WORKER_ANNUALIZATION
 
     _SEARCH_WORKER_ENV_BASE = build_eval_env(fields)
     _SEARCH_WORKER_CLOSE_COLUMNS = close.columns
@@ -47,6 +50,7 @@ def init_search_worker(
     _SEARCH_WORKER_MIN_OBS = min_obs
     _SEARCH_WORKER_SEGMENT_RATIOS = tuple(float(value) for value in segment_ratios)
     _SEARCH_WORKER_TRANSACTION_COST = float(transaction_cost)
+    _SEARCH_WORKER_ANNUALIZATION = float(annualization)
 
 
 def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str | None, str | None]:
@@ -83,6 +87,7 @@ def evaluate_search_item(item: tuple[str, str]) -> tuple[str, dict | None, str |
             min_segment_obs=_SEARCH_WORKER_MIN_OBS,
             segment_ratios=_SEARCH_WORKER_SEGMENT_RATIOS,
             transaction_cost=_SEARCH_WORKER_TRANSACTION_COST,
+            annualization=_SEARCH_WORKER_ANNUALIZATION,
         )
         if metrics["obs_count"] < _SEARCH_WORKER_MIN_OBS:
             raise ValueError(f"Insufficient observations: {metrics['obs_count']} < {_SEARCH_WORKER_MIN_OBS}")

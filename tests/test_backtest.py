@@ -5,6 +5,7 @@ import pandas as pd
 
 from alpha101.factors.backtesting import LongShortBacktestConfig, backtest_long_short
 from alpha101.factors.backtesting.simulation import forward_compound_returns
+from alpha101.factors.evaluation import periods_per_year
 
 
 def test_forward_compound_returns_starts_from_current_forward_target():
@@ -48,3 +49,10 @@ def test_backtest_long_short_returns_curve_and_metrics():
     assert "drawdown_before_cost" in metrics
     assert "drawdown_after_cost" in metrics
     assert metrics["drawdown"] == metrics["drawdown_after_cost"]
+
+
+def test_periods_per_year_matches_ga_alpha_bar_counts():
+    assert np.isclose(periods_per_year("1d"), 365.0)
+    assert np.isclose(periods_per_year("4h"), 365.0 * 6.0)
+    assert np.isclose(periods_per_year("1h"), 365.0 * 24.0)
+    assert np.isclose(periods_per_year("15m"), 365.0 * 24.0 * 4.0)
