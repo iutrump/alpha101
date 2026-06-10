@@ -8,6 +8,15 @@ from alpha101.factors.operator_lib.pandas.time_series import ts_decay_linear
 
 __all__ = [
     "process_factor_wide_format",
+    "neg",
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "lt",
+    "gt",
+    "eq",
+    "logical_or",
     "if_else",
     "trade_when",
 ]
@@ -29,6 +38,44 @@ def process_factor_wide_format(df, delay_days=0, decay_period=0):
     else:
         ts_decay_lineared = df_std
     return ts_decay_lineared
+
+
+def neg(x):
+    return -x
+
+
+def add(left, right):
+    return left + right
+
+
+def sub(left, right):
+    return left - right
+
+
+def mul(left, right):
+    return left * right
+
+
+def div(left, right):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return left / right
+
+
+def lt(left, right):
+    return left < right
+
+
+def gt(left, right):
+    return left > right
+
+
+def eq(left, right):
+    return left == right
+
+
+def logical_or(left, right):
+    return np.logical_or(left, right)
+
 
 def if_else(condition, true_val, false_val):
     """

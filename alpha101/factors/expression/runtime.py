@@ -36,7 +36,8 @@ def convert_ternary(expr: str) -> str:
 
 
 def normalize_expression_code(code: str) -> str:
-    return convert_ternary(remove_comments(code).lower())
+    normalized = convert_ternary(remove_comments(code).lower())
+    return re.sub(r"\bor\s*\(", "logical_or(", normalized)
 
 
 def alpha_fields(alpha_instance) -> dict[str, Any]:
@@ -55,8 +56,9 @@ def alpha_fields(alpha_instance) -> dict[str, Any]:
 
 
 def build_eval_env(fields: Mapping[str, Any]) -> dict[str, Any]:
+    fields_dict = dict(fields)
     env = {
-        **dict(fields),
+        **fields_dict,
         "np": np,
         "pd": pd,
         "abs": np.abs,
@@ -68,6 +70,17 @@ def build_eval_env(fields: Mapping[str, Any]) -> dict[str, Any]:
         "exp": np.exp,
     }
     env.update(OPERATOR_REGISTRY)
+    if {"close", "vwap", "volume"}.issubset(fields_dict):
+        dollar_volume = fields_dict["vwap"] * fields_dict["volume"]
+        env["volume_weighted_price"] = fields_dict["close"] * fields_dict["volume"]
+        env["adv"] = lambda window: OPERATOR_REGISTRY["ts_mean"](dollar_volume, int(float(window)))
+        for window in (3, 5, 6, 7, 8, 10, 12, 14, 15, 20, 21, 24, 28, 30, 40, 48, 54, 60):
+            env[f"adv{window}"] = OPERATOR_REGISTRY["ts_mean"](dollar_volume, window)
+        env["ts_vwap"] = lambda window: OPERATOR_REGISTRY["ts_vwap"](
+            fields_dict["vwap"],
+            fields_dict["volume"],
+            int(float(window)),
+        )
     return env
 
 

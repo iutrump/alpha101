@@ -14,16 +14,23 @@ __all__ = [
     "correlation",
     "ts_pctchange",
     "ts_covariance",
+    "ts_cov",
     "ts_rank",
     "rolling_prod",
     "ts_product",
+    "product",
     "ts_min",
     "ts_max",
     "ts_delta",
+    "delta",
     "ts_delay",
+    "delay",
     "ts_arg_max",
+    "ts_argmax",
     "ts_arg_min",
+    "ts_argmin",
     "ts_decay_linear",
+    "decay_linear",
     "ts_skewness",
     "ts_kurtosis",
     "ts_quantile",
@@ -36,6 +43,10 @@ __all__ = [
     "ts_mean",
     "ts_std",
     "ts_corr",
+    "ts_volatility",
+    "ts_percentile",
+    "ts_vwap",
+    "signed_power",
 ]
 
 def ts_sum(df, window=10):
@@ -191,6 +202,9 @@ def ts_product(df: pd.DataFrame, window: int = 10) -> pd.DataFrame:
             out[window - 1:] = np.prod(windows, axis=2)
     return pd.DataFrame(out, index=df.index, columns=df.columns)
 
+
+product = ts_product
+
 def ts_min(df, window=10):
     """
     Wrapper function to estimate rolling min.
@@ -227,6 +241,10 @@ def ts_delay(df, period=1):
     """
     return df.shift(period)
 
+
+delta = ts_delta
+delay = ts_delay
+
 def ts_arg_max(df, window=10):
     """
     Wrapper function to estimate which day ts_max(df, window) occurred on
@@ -250,6 +268,11 @@ def ts_arg_max(df, window=10):
 
     return pd.DataFrame(result, index=df.index, columns=df.columns)
 
+def signed_power(df: pd.DataFrame | pd.Series, power: float) -> pd.DataFrame | pd.Series:
+    """Return sign(x) * abs(x) ** power while preserving the input shape."""
+    return np.sign(df) * np.power(np.abs(df), power)
+
+
 def ts_arg_min(df, window=10):
     """
     Wrapper function to estimate which day ts_min(df, window) occurred on
@@ -272,6 +295,10 @@ def ts_arg_min(df, window=10):
         result[i] = argmin + 1
 
     return pd.DataFrame(result, index=df.index, columns=df.columns)
+
+
+ts_argmax = ts_arg_max
+ts_argmin = ts_arg_min
 
 def ts_decay_linear(df: pd.DataFrame, period: int) -> pd.DataFrame:
     """
@@ -301,6 +328,9 @@ def ts_decay_linear(df: pd.DataFrame, period: int) -> pd.DataFrame:
 
     return pd.DataFrame(result, index=df.index, columns=df.columns)
 
+
+decay_linear = ts_decay_linear
+
 def ts_skewness(x: pd.DataFrame, window=7):
     """
     计算滚动窗口内的偏度
@@ -324,6 +354,23 @@ def ts_quantile(x: pd.DataFrame, window=7, q=0.5):
     q: 0~1之间，如0.5为中位数，0.25为下四分位
     """
     return x.rolling(window=window).quantile(q)
+
+
+def ts_percentile(df: pd.DataFrame, window: int = 10) -> pd.DataFrame:
+    """Rolling percentile rank of the current value in each lookback window."""
+    arr = df.to_numpy(dtype=np.float64, copy=False)
+    result = np.full(arr.shape, np.nan, dtype=np.float64)
+    if window <= 1:
+        return pd.DataFrame(result, index=df.index, columns=df.columns)
+    for i in range(window - 1, arr.shape[0]):
+        window_slice = arr[i - window + 1:i + 1]
+        current = window_slice[-1]
+        finite = np.isfinite(window_slice) & np.isfinite(current)
+        counts = finite.sum(axis=0)
+        values = ((window_slice < current) & finite).sum(axis=0) / np.maximum(counts - 1, 1)
+        values[counts < window] = np.nan
+        result[i] = values
+    return pd.DataFrame(result, index=df.index, columns=df.columns)
 
 def atr(self, window=14):
     """
@@ -370,6 +417,16 @@ def ts_zscore(df, window=10, eps=1e-8):
 
     out = (df - mean) / std
     return out.replace([np.inf, -np.inf], np.nan)
+
+
+def ts_volatility(df: pd.DataFrame, window: int = 10) -> pd.DataFrame:
+    return df.pct_change(fill_method=None).rolling(window=window, min_periods=window).std()
+
+
+def ts_vwap(vwap: pd.DataFrame, volume: pd.DataFrame, window: int = 10) -> pd.DataFrame:
+    dollar_volume = (vwap * volume).rolling(window=window, min_periods=window).sum()
+    volume_sum = volume.rolling(window=window, min_periods=window).sum()
+    return dollar_volume / volume_sum.replace(0, np.nan)
 
 def ts_pos(x: pd.DataFrame, window: int = 7) -> pd.DataFrame:
     """
@@ -470,3 +527,4 @@ def ts_slope(x: pd.DataFrame, window: int = 7) -> pd.DataFrame:
 ts_mean = sma
 ts_std = ts_std_dev
 ts_corr = correlation
+ts_cov = ts_covariance

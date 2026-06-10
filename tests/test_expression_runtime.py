@@ -23,6 +23,13 @@ def make_wide_data() -> pd.DataFrame:
 
 def test_operator_registry_has_explicit_public_names():
     assert "ts_mean" in OPERATOR_REGISTRY
+    assert "decay_linear" in OPERATOR_REGISTRY
+    assert "delay" in OPERATOR_REGISTRY
+    assert "delta" in OPERATOR_REGISTRY
+    assert "product" in OPERATOR_REGISTRY
+    assert "signed_power" in OPERATOR_REGISTRY
+    assert "ts_cov" in OPERATOR_REGISTRY
+    assert "ts_argmax" in OPERATOR_REGISTRY
     assert "rank" in OPERATOR_REGISTRY
     assert "process_factor_wide_format" in OPERATOR_REGISTRY
     assert "__builtins__" not in OPERATOR_REGISTRY
@@ -52,6 +59,39 @@ def test_expression_sqrt_clips_negative_values():
 
     assert float(result.to_numpy().max()) == 0.0
     assert float(result.to_numpy().min()) == 0.0
+
+
+def test_expression_runtime_supports_signed_power_and_decay_alias():
+    wide = make_wide_data()
+    engine = FastExpressionEngine(FactorDataView(wide))
+
+    signed = engine.evaluate("signed_power(open - close, 2)")
+    expected_signed = -np.power(np.abs(wide["open"] - wide["close"]), 2)
+    pd.testing.assert_frame_equal(signed, expected_signed)
+
+    decay_alias = engine.evaluate("decay_linear(close, 3)")
+    decay_original = engine.evaluate("ts_decay_linear(close, 3)")
+    pd.testing.assert_frame_equal(decay_alias, decay_original)
+
+
+def test_expression_runtime_supports_ga_alpha_operator_names():
+    wide = make_wide_data()
+    engine = FastExpressionEngine(FactorDataView(wide))
+
+    alias_expr = engine.evaluate("add(delay(close, 1), delta(open, 1))")
+    expected = wide["close"].shift(1) + wide["open"].diff(1)
+    pd.testing.assert_frame_equal(alias_expr, expected)
+
+    conditional = engine.evaluate("if_else(or(lt(open, close), gt(volume, close)), close, open)")
+    pd.testing.assert_frame_equal(conditional, wide["close"])
+
+    product_alias = engine.evaluate("product(close / 100, 3)")
+    product_original = engine.evaluate("ts_product(close / 100, 3)")
+    pd.testing.assert_frame_equal(product_alias, product_original)
+
+    derived = engine.evaluate("ts_vwap(3) + volume_weighted_price + adv3")
+    assert derived.shape == wide["close"].shape
+    assert np.isfinite(derived.iloc[2:].to_numpy()).all()
 
 
 def test_ts_slope_matches_reference_rolling_apply():
