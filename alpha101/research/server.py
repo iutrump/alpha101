@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import os
 from typing import Any
 
 import pandas as pd
@@ -9,8 +10,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from alpha101.config import get_config
-from alpha101.data import FactorDataView, build_research_wide_frame
+from alpha101.data import (
+    FactorDataView,
+    build_ashare_wide_frame_from_csv,
+    build_external_factor_wide_frame,
+    build_research_wide_frame,
+)
 from alpha101.factors.backtesting import LongShortBacktestConfig, backtest_long_short
+from alpha101.factors.evaluation.external import (
+    build_external_factor_curve,
+    external_factor_names,
+    score_external_factors,
+)
 from alpha101.factors.operator_lib import process_factor_wide_format
 from alpha101.factors.expression import FastExpressionEngine
 
@@ -32,23 +43,42 @@ class BacktestRequest(BaseModel):
     short_group: int | None = Field(None, ge=1, le=50)
 
 
+class ExternalBacktestRequest(BaseModel):
+    n_quintiles: int = Field(5, ge=2, le=50)
+    transaction_cost: float = Field(0.001, ge=0.0, le=0.1)
+
+
 def _load_context() -> dict[str, Any]:
     cfg = get_config()
-    wide_data = build_research_wide_frame(
-        cfg.pairs,
-        cfg.lookback_days,
-        cfg.data_root,
-        cfg.timeframe,
-        test_start_date=cfg.test_start_date,
-        test_end_date=cfg.test_end_date,
-        buffer=cfg.pre_buffer_candles,
-    )
-    engine = FastExpressionEngine(FactorDataView(wide_data))
+    ashare_csv = os.getenv("ALPHA101_ASHARE_CSV")
+    external_csv = os.getenv("ALPHA101_EXTERNAL_FACTOR_CSV") or os.getenv("ALPHA101_EXTERNAL_FACTOR_GLOB")
+    if ashare_csv:
+        wide_data = build_ashare_wide_frame_from_csv(ashare_csv)
+    elif external_csv:
+        wide_data = build_external_factor_wide_frame(external_csv)
+    else:
+        wide_data = build_research_wide_frame(
+            cfg.pairs,
+            cfg.lookback_days,
+            cfg.data_root,
+            cfg.timeframe,
+            test_start_date=cfg.test_start_date,
+            test_end_date=cfg.test_end_date,
+            buffer=cfg.pre_buffer_candles,
+        )
+    engine = FastExpressionEngine(FactorDataView(wide_data)) if _can_build_expression_engine(wide_data) else None
+    external_wide = build_external_factor_wide_frame(external_csv) if external_csv else None
     return {
         "cfg": cfg,
         "wide_data": wide_data,
         "engine": engine,
+        "external_wide": external_wide,
     }
+
+
+def _can_build_expression_engine(wide_data: pd.DataFrame) -> bool:
+    fields = set(wide_data.columns.get_level_values(0))
+    return {"open", "high", "low", "close", "volume"}.issubset(fields)
 
 
 def get_context() -> dict[str, Any]:
@@ -78,6 +108,8 @@ def _build_factor_view(wide_data: pd.DataFrame, raw_factor: pd.DataFrame) -> dic
         for symbol in raw_factor.columns
         if all((field, symbol) in wide_data.columns for field in ("open", "high", "low", "close"))
     ]
+    if not symbols:
+        symbols = list(raw_factor.columns)
     raw_factor = raw_factor.reindex(columns=symbols)
     ranks = raw_factor.rank(axis=1, method="min", ascending=False, na_option="keep")
     totals = raw_factor.notna().sum(axis=1)
@@ -130,6 +162,53 @@ def _get_factor_view(run_id: int | None = None) -> dict[str, Any]:
     return view
 
 
+def _get_external_wide(ctx: dict[str, Any]) -> pd.DataFrame:
+    external_wide = ctx.get("external_wide")
+    if external_wide is None:
+        raise HTTPException(status_code=404, detail="no external factor data is configured")
+    return external_wide
+
+
+def _get_external_summary(ctx: dict[str, Any]) -> pd.DataFrame:
+    summary = ctx.get("external_summary")
+    if summary is None:
+        external_wide = _get_external_wide(ctx)
+        summary = score_external_factors(
+            external_wide,
+            n_quantiles=_default_external_quantiles(external_wide),
+            min_segment_obs=1,
+        )
+        ctx["external_summary"] = summary
+    return summary
+
+
+def _default_external_quantiles(external_wide: pd.DataFrame) -> int:
+    target_symbols = len(external_wide["target"].columns) if "target" in external_wide.columns.get_level_values(0) else 5
+    return max(2, min(5, int(target_symbols)))
+
+
+def _external_metrics_for_response(metrics: dict[str, Any]) -> dict[str, Any]:
+    out = dict(metrics)
+    sharpe = out.get("sharpe_ratio", out.get("sharpe_after_cost", 0.0))
+    returns = out.get("returns", out.get("returns_after_cost", 0.0))
+    out.setdefault("sharpe", sharpe)
+    out.setdefault("sharpe_after_cost", sharpe)
+    out.setdefault("sharpe_before_cost", out.get("sharpe_before_cost", sharpe))
+    out.setdefault("cagr", returns)
+    out.setdefault("cagr_after_cost", out.get("returns_after_cost", returns))
+    out.setdefault("returns_after_cost", returns)
+    out.setdefault("annual_cost_drag", out.get("returns_before_cost", returns) - out.get("returns_after_cost", returns))
+    out.setdefault("funding_annual", 0.0)
+    out.setdefault("margin", returns)
+    out.setdefault("margin_after_cost", out.get("returns_after_cost", returns))
+    out.setdefault("single_side_fee", out.get("transaction_cost", 0.0))
+    out.setdefault("round_trip_fee", out.get("transaction_cost", 0.0))
+    out.setdefault("avg_long_funding", 0.0)
+    out.setdefault("avg_short_funding", 0.0)
+    out.setdefault("symbols", 0)
+    return out
+
+
 def _load_index_html() -> str:
     from importlib.resources import files
 
@@ -158,8 +237,10 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
 
     ctx = get_context()
     cfg = ctx["cfg"]
-    engine: FastExpressionEngine = ctx["engine"]
+    engine: FastExpressionEngine | None = ctx["engine"]
     wide_data: pd.DataFrame = ctx["wide_data"]
+    if engine is None:
+        raise HTTPException(status_code=400, detail="expression backtest is unavailable without OHLCV data")
 
     try:
         factor_wide = engine.evaluate(expression)
@@ -210,6 +291,67 @@ def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
     }
 
 
+@app.get("/api/external-factors")
+def list_external_factors() -> dict[str, Any]:
+    ctx = get_context()
+    external_wide = _get_external_wide(ctx)
+    summary = _get_external_summary(ctx)
+    if summary.empty:
+        factors = [{"factor": name} for name in external_factor_names(external_wide)]
+    else:
+        factors = summary.to_dict(orient="records")
+    return {"success": True, "factors": factors}
+
+
+@app.post("/api/external-factor-backtest/{factor_name}")
+def run_external_factor_backtest(factor_name: str, payload: ExternalBacktestRequest) -> dict[str, Any]:
+    ctx = get_context()
+    external_wide = _get_external_wide(ctx)
+    factor_names = external_factor_names(external_wide)
+    if factor_name not in factor_names:
+        raise HTTPException(status_code=404, detail=f"external factor not found: {factor_name}")
+    n_quantiles = _effective_external_quantiles(external_wide, payload.n_quintiles)
+
+    try:
+        summary = score_external_factors(
+            external_wide,
+            factor_names=[factor_name],
+            n_quantiles=n_quantiles,
+            min_segment_obs=1,
+            transaction_cost=payload.transaction_cost,
+        )
+        metrics = summary.iloc[0].to_dict()
+        curve_df = build_external_factor_curve(
+            external_wide,
+            factor_name,
+            n_quantiles=n_quantiles,
+            transaction_cost=payload.transaction_cost,
+        )
+        raw_factor = external_wide[factor_name]
+        wide_data = ctx.get("wide_data", external_wide)
+        factor_view = _build_factor_view(wide_data, raw_factor)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {
+        "success": True,
+        "factor": factor_name,
+        "config": {
+            "mode": "external_precomputed",
+            "n_quintiles": int(n_quantiles),
+            "transaction_cost": float(payload.transaction_cost),
+        },
+        "metrics": _external_metrics_for_response(metrics),
+        "curve": curve_df.to_dict(orient="records"),
+        "factor_view": factor_view,
+    }
+
+
+def _effective_external_quantiles(external_wide: pd.DataFrame, requested: int) -> int:
+    target_symbols = len(external_wide["target"].columns)
+    return max(2, min(int(requested), int(target_symbols)))
+
+
 @app.get("/api/factor-detail/{symbol}")
 def factor_detail(symbol: str, run_id: int | None = None) -> dict[str, Any]:
     view = _get_factor_view(run_id)
@@ -222,10 +364,10 @@ def factor_detail(symbol: str, run_id: int | None = None) -> dict[str, Any]:
     totals: pd.Series = view["totals"]
     frame = pd.DataFrame(
         {
-            "open": wide_data[("open", symbol)].reindex(raw_factor.index),
-            "high": wide_data[("high", symbol)].reindex(raw_factor.index),
-            "low": wide_data[("low", symbol)].reindex(raw_factor.index),
-            "close": wide_data[("close", symbol)].reindex(raw_factor.index),
+            "open": _optional_symbol_series(wide_data, "open", symbol, raw_factor.index),
+            "high": _optional_symbol_series(wide_data, "high", symbol, raw_factor.index),
+            "low": _optional_symbol_series(wide_data, "low", symbol, raw_factor.index),
+            "close": _optional_symbol_series(wide_data, "close", symbol, raw_factor.index),
             "raw_factor": raw_factor[symbol],
             "rank": ranks[symbol],
             "total": totals,
@@ -254,6 +396,17 @@ def factor_detail(symbol: str, run_id: int | None = None) -> dict[str, Any]:
         "latest_date": view["latest_date"],
         "rows": rows,
     }
+
+
+def _optional_symbol_series(
+    wide_data: pd.DataFrame,
+    field: str,
+    symbol: str,
+    index: pd.Index,
+) -> pd.Series:
+    if (field, symbol) in wide_data.columns:
+        return wide_data[(field, symbol)].reindex(index)
+    return pd.Series(pd.NA, index=index, dtype="Float64")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
   <title>Alpha101 Factor Research Lab</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
@@ -27,6 +28,12 @@
     .symbol-item .symbol { font-weight:700; }
     .symbol-item .rank { color:var(--accent); font-weight:700; }
     .symbol-item .factor { grid-column:1 / -1; color:var(--soft); font-size:12px; }
+    .external-list { margin-top:10px; border:1px solid var(--line); border-radius:10px; background:#fff; max-height:220px; overflow:auto; }
+    .external-item { width:100%; border:0; border-bottom:1px solid var(--line); border-radius:0; padding:9px 10px; background:#fff; color:var(--ink); display:grid; grid-template-columns:1fr auto; gap:4px 8px; text-align:left; cursor:pointer; }
+    .external-item:hover,.external-item.active { background:#fff0df; }
+    .external-item .name { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .external-item .score { color:var(--accent); font-weight:700; }
+    .external-item .meta { grid-column:1 / -1; color:var(--soft); font-size:12px; }
     .detail-head { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; min-height:30px; margin-bottom:8px; }
     .detail-head .title { font-size:18px; font-weight:800; }
     .detail-head .value { color:var(--soft); font-size:13px; }
@@ -56,6 +63,13 @@
       <div class="row">
         <button id="runBtn">Run</button>
       </div>
+      <div class="row" style="margin-top:16px;">
+        <div>
+          <div style="font-weight:800;">External Factors</div>
+          <div class="muted">Precomputed accepted factors from the configured server dataset.</div>
+        </div>
+      </div>
+      <div id="externalFactorList" class="external-list"><div class="muted" style="padding:12px;">Loading external factors...</div></div>
       <div id="status"></div>
       <div id="metrics" class="metrics"></div>
     </section>
@@ -83,8 +97,10 @@
     const shortGroupEl = document.getElementById("shortGroup");
     const symbolListEl = document.getElementById("symbolList");
     const detailHeadEl = document.getElementById("detailHead");
+    const externalFactorListEl = document.getElementById("externalFactorList");
     let factorRunId = null;
     let selectedSymbol = null;
+    let selectedExternalFactor = null;
     const pct = v => `${(v * 100).toFixed(2)}%`;
     const num = v => Number(v).toFixed(4);
     const maybeNum = v => v === null || v === undefined || Number.isNaN(Number(v)) ? "N/A" : Number(v).toFixed(6);
@@ -95,13 +111,16 @@
       const x=curve.map(d=>d.date);
       const traces=[];
       for(let i=1;i<=nQuintiles;i++){
-        traces.push({
-          x,
-          y:curve.map(d=>d[`q${i}_cum`]),
-          mode:"lines",
-          name:`Q${i}`,
-          line:{width:1.6}
-        });
+        const key = `q${i}_cum`;
+        if(curve.some(d => d[key] !== undefined && d[key] !== null)){
+          traces.push({
+            x,
+            y:curve.map(d=>d[key]),
+            mode:"lines",
+            name:`Q${i}`,
+            line:{width:1.6}
+          });
+        }
       }
       traces.push({
         x,
@@ -140,6 +159,69 @@
         button.addEventListener("click", () => loadFactorDetail(button.dataset.symbol));
       }
       loadFactorDetail(selectedSymbol);
+    }
+    function renderExternalFactors(factors){
+      if(!factors.length){
+        externalFactorListEl.innerHTML = `<div class="muted" style="padding:12px;">No external factors configured.</div>`;
+        return;
+      }
+      externalFactorListEl.innerHTML = factors.map(item => {
+        const factor = item.factor;
+        const score = item.ic_ir === undefined || item.ic_ir === null ? "N/A" : Number(item.ic_ir).toFixed(3);
+        const ret = item.returns === undefined || item.returns === null ? "N/A" : `${(Number(item.returns) * 100).toFixed(2)}%`;
+        return `
+          <button class="external-item ${factor === selectedExternalFactor ? "active" : ""}" data-factor="${factor}">
+            <span class="name">${factor}</span>
+            <span class="score">ICIR ${score}</span>
+            <span class="meta">return ${ret} · obs ${item.obs_count ?? "-"}</span>
+          </button>
+        `;
+      }).join("");
+      for(const button of externalFactorListEl.querySelectorAll(".external-item")){
+        button.addEventListener("click", () => runExternalFactor(button.dataset.factor));
+      }
+    }
+    async function loadExternalFactors(){
+      try {
+        const resp = await fetch("/api/external-factors");
+        const data = await resp.json();
+        if(!resp.ok){ throw new Error(data.detail || "No external factors configured"); }
+        const factors = data.factors || [];
+        renderExternalFactors(factors);
+        return factors;
+      } catch(err) {
+        externalFactorListEl.innerHTML = `<div class="muted" style="padding:12px;">${err.message}</div>`;
+        return [];
+      }
+    }
+    async function runExternalFactor(factor){
+      syncGroupInputs();
+      selectedExternalFactor = factor;
+      for(const button of externalFactorListEl.querySelectorAll(".external-item")){
+        button.classList.toggle("active", button.dataset.factor === factor);
+      }
+      const n_quintiles = Number(nqEl.value) || 5;
+      runBtn.disabled = true;
+      statusEl.textContent = `Running external factor ${factor}...`;
+      metricsEl.innerHTML = "";
+      try {
+        const resp = await fetch(`/api/external-factor-backtest/${encodeURIComponent(factor)}`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({n_quintiles, transaction_cost: 0.001})
+        });
+        const data = await resp.json();
+        if(!resp.ok){ throw new Error(data.detail || "External factor backtest failed"); }
+        const usedQuantiles = data.config?.n_quintiles || n_quintiles;
+        renderMetrics(data.metrics);
+        renderChart(data.curve, usedQuantiles, usedQuantiles, 1);
+        renderSymbolList(data.factor_view);
+        statusEl.textContent = `Done external factor: ${factor}, ${data.curve.length} points`;
+      } catch(err) {
+        statusEl.textContent = `Failed: ${err.message}`;
+      } finally {
+        runBtn.disabled = false;
+      }
     }
     async function loadFactorDetail(symbol){
       if(!symbol || !factorRunId) return;
@@ -217,7 +299,14 @@
     }
     nqEl.addEventListener("change", syncGroupInputs);
     syncGroupInputs();
-    runBtn.addEventListener("click", runBacktest); runBacktest();
+    runBtn.addEventListener("click", runBacktest);
+    loadExternalFactors().then(factors => {
+      if(factors.length){
+        runExternalFactor(factors[0].factor);
+      } else {
+        runBacktest();
+      }
+    });
   </script>
 </body>
 </html>
