@@ -19,7 +19,7 @@ from alpha101.factors.expression import FastExpressionEngine
 from alpha101.factors.expression.runtime import alpha_fields
 from alpha101.factors.generation import FactorGenerator
 from alpha101.factors.evaluation import forward_returns, periods_per_year, score_factor_search
-from alpha101.factors.evaluation.scoring import _time_segment_slices
+from alpha101.factors.evaluation.scoring import _time_segment_slices, score_factor_search_array
 from alpha101.factors.operator_lib import process_factor_wide_format
 from alpha101.factors.search.results import SearchResultStore
 from alpha101.factors.search.strategies import genetic_search
@@ -59,18 +59,22 @@ class FactorSearchEngine:
         pnl_dedupe_interval: int = 1,
         pnl_corr_threshold: float = 0.85,
         pnl_redundancy_penalty: float = 999.0,
+        target_returns: pd.DataFrame | None = None,
     ):
         self.wide_data = wide_data
         self.alpha_obj = FactorDataView(wide_data)
         self.engine = FastExpressionEngine(self.alpha_obj)
         self.generator = FactorGenerator(seed=seed)
+        available_fields = set(self._expression_fields())
+        self.generator.data_fields = [field for field in self.generator.data_fields if field in available_fields]
         self.exclude_fields = tuple(exclude_fields or ())
         if self.exclude_fields:
             self.generator.data_fields = [
                 field for field in self.generator.data_fields if field not in set(self.exclude_fields)
             ]
-            if not self.generator.data_fields:
-                raise ValueError("exclude_fields removed all generator data fields")
+        if not self.generator.data_fields:
+            raise ValueError("No available data fields remain for factor generation")
+        self.target_returns = self._align_target_returns(target_returns)
         self.results = SearchResultStore(output_dir, timeframe)
         self.timeframe = timeframe
         self.n_quantiles = n_quantiles
@@ -280,7 +284,7 @@ class FactorSearchEngine:
             index=self.wide_data.index,
             columns=self.wide_data["close"].columns,
         )
-        target = forward_returns(self.wide_data["close"], periods=self.forward_periods)
+        target = self._target_returns()
         slices = _time_segment_slices(len(self.wide_data), self.segment_ratios)
         visible_slice = slice(slices["train"].start, slices["valid"].stop)
         factor = factor.iloc[visible_slice]
@@ -436,6 +440,7 @@ class FactorSearchEngine:
                 self.segment_ratios,
                 self.transaction_cost,
                 self.annualization,
+                self.target_returns,
             )
             iterator = tqdm(items, desc="Evaluating factors") if progress_bar else items
             return {
@@ -463,6 +468,7 @@ class FactorSearchEngine:
                     self.segment_ratios,
                     self.transaction_cost,
                     self.annualization,
+                    self.target_returns,
                 ),
             ) as executor:
                 self._collect_metric_results(executor, items, results, pbar)
@@ -506,6 +512,19 @@ class FactorSearchEngine:
             raise ValueError(f"Complexity too high (> {self.max_complexity})")
 
     def _score_factor(self, factor_df: pd.DataFrame, *, preprocess: bool = True) -> dict:
+        if self.target_returns is not None:
+            if preprocess:
+                factor_df = process_factor_wide_format(factor_df)
+            target = self.target_returns.reindex(index=factor_df.index, columns=factor_df.columns)
+            return score_factor_search_array(
+                factor_df.to_numpy(dtype=float, copy=False),
+                target.to_numpy(dtype=float, copy=False),
+                n_quantiles=self.n_quantiles,
+                min_segment_obs=self.min_obs,
+                segment_ratios=self.segment_ratios,
+                transaction_cost=self.transaction_cost,
+                annualization=self.annualization,
+            )
         return score_factor_search(
             factor_df,
             self.wide_data["close"],
@@ -523,6 +542,19 @@ class FactorSearchEngine:
 
     def _expression_fields(self) -> dict:
         return alpha_fields(self.alpha_obj)
+
+    def _target_returns(self) -> pd.DataFrame:
+        if self.target_returns is not None:
+            return self.target_returns
+        return forward_returns(self.wide_data["close"], periods=self.forward_periods)
+
+    def _align_target_returns(self, target_returns: pd.DataFrame | None) -> pd.DataFrame | None:
+        if target_returns is None:
+            view_target = getattr(self.alpha_obj, "target", None)
+            target_returns = view_target
+        if target_returns is None:
+            return None
+        return target_returns.reindex(index=self.wide_data.index, columns=self.wide_data["close"].columns)
 
     def _result_is_all_nan(self, result) -> bool:
         return result.isnull().all().all()
@@ -565,6 +597,8 @@ class FactorSearchEngine:
                 self.min_obs,
                 self.segment_ratios,
                 self.transaction_cost,
+                self.annualization,
+                self.target_returns,
             ),
         )
         try:

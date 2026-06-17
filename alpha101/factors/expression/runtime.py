@@ -41,18 +41,20 @@ def normalize_expression_code(code: str) -> str:
 
 
 def alpha_fields(alpha_instance) -> dict[str, Any]:
-    return {
+    fields = {
         "open": alpha_instance.open,
         "high": alpha_instance.high,
         "low": alpha_instance.low,
         "close": alpha_instance.close,
         "volume": alpha_instance.volume,
         "returns": alpha_instance.returns,
-        "vwap": alpha_instance.vwap,
         "market_return": alpha_instance.market_return,
-        "funding": alpha_instance.funding,
-        "cap": alpha_instance.cap,
     }
+    for name in ("vwap", "funding", "cap", "target"):
+        value = getattr(alpha_instance, name, None)
+        if value is not None:
+            fields[name] = value
+    return fields
 
 
 def build_eval_env(fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -70,7 +72,7 @@ def build_eval_env(fields: Mapping[str, Any]) -> dict[str, Any]:
         "exp": np.exp,
     }
     env.update(OPERATOR_REGISTRY)
-    if {"close", "vwap", "volume"}.issubset(fields_dict):
+    if {"close", "vwap", "volume"}.issubset(fields_dict) and fields_dict["vwap"] is not None:
         dollar_volume = fields_dict["vwap"] * fields_dict["volume"]
         env["volume_weighted_price"] = fields_dict["close"] * fields_dict["volume"]
         env["adv"] = lambda window: OPERATOR_REGISTRY["ts_mean"](dollar_volume, int(float(window)))

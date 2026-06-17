@@ -6,7 +6,7 @@ import random
 import numpy as np
 
 from alpha101.config import get_config
-from alpha101.data import build_research_wide_frame
+from alpha101.data import build_ashare_wide_frame_from_csv, build_research_wide_frame
 from alpha101.factors.search import FactorSearchEngine
 
 
@@ -69,6 +69,22 @@ def main() -> None:
         default=None,
         help="Data fields to exclude from random generation, e.g. --exclude-fields cap funding.",
     )
+    parser.add_argument(
+        "--ashare-csv",
+        action="append",
+        default=None,
+        help="A-share long CSV path. Repeat for multiple files. Uses direct target if present.",
+    )
+    parser.add_argument("--ashare-date-col", default="date")
+    parser.add_argument("--ashare-symbol-col", default="code")
+    parser.add_argument("--ashare-cap-col", default="market_cap")
+    parser.add_argument("--ashare-target-col", default="label_5d")
+    parser.add_argument("--ashare-tradeable-col", default=None)
+    parser.add_argument(
+        "--ashare-include-vwap",
+        action="store_true",
+        help="Expose typical-price VWAP for A-share experiments. Disabled by default.",
+    )
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -79,15 +95,7 @@ def main() -> None:
     cfg = get_config(args.config)
     if args.timeframe is not None:
         cfg.timeframe = args.timeframe
-    wide_data = build_research_wide_frame(
-        cfg.pairs,
-        cfg.lookback_days,
-        cfg.data_root,
-        cfg.timeframe,
-        test_start_date=cfg.test_start_date,
-        test_end_date=cfg.test_end_date,
-        buffer=cfg.pre_buffer_candles,
-    )
+    wide_data = _load_wide_data_from_args(args, cfg)
     search_engine = FactorSearchEngine(
         wide_data,
         output_dir=args.output_dir or str(cfg.output_dir),
@@ -138,6 +146,28 @@ def _load_seed_expressions(expressions: list[str], path: str | None) -> list[str
             if expr and not expr.startswith("#"):
                 out.append(expr)
     return out
+
+
+def _load_wide_data_from_args(args, cfg):
+    if getattr(args, "ashare_csv", None):
+        return build_ashare_wide_frame_from_csv(
+            args.ashare_csv,
+            date_col=args.ashare_date_col,
+            symbol_col=args.ashare_symbol_col,
+            cap_col=args.ashare_cap_col or None,
+            target_col=args.ashare_target_col or None,
+            tradeable_col=args.ashare_tradeable_col or None,
+            include_vwap=bool(args.ashare_include_vwap),
+        )
+    return build_research_wide_frame(
+        cfg.pairs,
+        cfg.lookback_days,
+        cfg.data_root,
+        cfg.timeframe,
+        test_start_date=cfg.test_start_date,
+        test_end_date=cfg.test_end_date,
+        buffer=cfg.pre_buffer_candles,
+    )
 
 
 if __name__ == "__main__":

@@ -8,8 +8,8 @@ class FactorDataView:
     def __init__(self, wide_data):
         """
         wide_data must use MultiIndex columns: (field, symbol).
-        Required fields: open, high, low, close, volume, vwap.
-        Optional fields: cap, funding.
+        Required fields: open, high, low, close, volume.
+        Optional fields: vwap, cap, funding, target.
         """
         self._open = wide_data["open"]
         self._high = wide_data["high"]
@@ -17,7 +17,9 @@ class FactorDataView:
         self._close = wide_data["close"]
         self._volume = wide_data["volume"]
         self._returns = self._close.pct_change(fill_method=None)
-        self._vwap = wide_data["vwap"]
+        fields = wide_data.columns.get_level_values(0)
+        self._vwap = wide_data["vwap"] if "vwap" in fields else None
+        self._target = wide_data["target"] if "target" in fields else None
         self._cap = wide_data["cap"] if "cap" in wide_data.columns.get_level_values(0) else None
         self._funding = (
             wide_data["funding"] if "funding" in wide_data.columns.get_level_values(0) else None
@@ -51,6 +53,10 @@ class FactorDataView:
     @property
     def vwap(self):
         return self._vwap
+
+    @property
+    def target(self):
+        return self._target
 
     @property
     def market_return(self):

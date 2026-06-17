@@ -31,6 +31,7 @@ def init_search_worker(
     segment_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15),
     transaction_cost: float = 0.001,
     annualization: float = 365.0,
+    target_returns: pd.DataFrame | None = None,
 ) -> None:
     global _SEARCH_WORKER_ENV_BASE
     global _SEARCH_WORKER_CLOSE_COLUMNS
@@ -44,7 +45,11 @@ def init_search_worker(
 
     _SEARCH_WORKER_ENV_BASE = build_eval_env(fields)
     _SEARCH_WORKER_CLOSE_COLUMNS = close.columns
-    _SEARCH_WORKER_TARGET = forward_returns_array(close.to_numpy(dtype=float, copy=False), forward_periods)
+    if target_returns is None:
+        _SEARCH_WORKER_TARGET = forward_returns_array(close.to_numpy(dtype=float, copy=False), forward_periods)
+    else:
+        aligned_target = target_returns.reindex(index=close.index, columns=close.columns)
+        _SEARCH_WORKER_TARGET = aligned_target.to_numpy(dtype=float, copy=False)
     _SEARCH_WORKER_N_QUANTILES = n_quantiles
     _SEARCH_WORKER_FORWARD_PERIODS = forward_periods
     _SEARCH_WORKER_MIN_OBS = min_obs
