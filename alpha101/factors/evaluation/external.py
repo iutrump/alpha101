@@ -52,6 +52,9 @@ def score_external_factors(
         for key, value in metrics.items():
             if key != "segment_metrics":
                 row[key] = value
+        row["full_obs_count"] = int(_valid_date_count(factor, target, n_quantiles=n_quantiles))
+        row["start_date"] = str(target.index[0]) if len(target.index) else None
+        row["end_date"] = str(target.index[-1]) if len(target.index) else None
         rows.append(row)
     if not rows:
         return pd.DataFrame(columns=["factor"])
@@ -107,6 +110,13 @@ def _field_frame(wide: pd.DataFrame, field: str) -> pd.DataFrame:
     frame.index.name = "date"
     frame.columns.name = "symbol"
     return frame
+
+
+def _valid_date_count(factor: pd.DataFrame, target: pd.DataFrame, *, n_quantiles: int) -> int:
+    valid = np.isfinite(factor.to_numpy(dtype=float, copy=False)) & np.isfinite(
+        target.to_numpy(dtype=float, copy=False)
+    )
+    return int((valid.sum(axis=1) >= int(n_quantiles)).sum())
 
 
 def _quantile_returns_array(factor: np.ndarray, target: np.ndarray, *, n_quantiles: int) -> np.ndarray:
