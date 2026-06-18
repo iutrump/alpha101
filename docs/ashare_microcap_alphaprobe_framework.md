@@ -36,22 +36,13 @@ The default protocol is exposed by `GET /api/protocol`.
 3. Start alpha101 with:
 
 ```powershell
-python -m microcap_alpha.cli export-local-factor-values `
-  --data-dir "D:\path\to\research_full_2016_20260528_merged" `
-  --factor-library "D:\path\to\checkpoint.json" `
-  --output-dir "D:\path\to\alpha101_external_accepted317" `
-  --start-date 2022-05-31 `
-  --end-date 2025-12-27 `
-  --frequency weekly `
-  --weekly-signal-weekday 0 `
-  --trade-lag-days 1 `
-  --factor-workers 1 `
-  --filename-prefix microcap400_alphaprobe_weekly
-
-$env:ALPHA101_EXTERNAL_FACTOR_GLOB="D:\path\to\alpha101_external_accepted317\microcap400_alphaprobe_weekly_*.csv"
-$env:ALPHA101_ACCEPTED_SUMMARY_CSV="D:\path\to\accepted_summary.csv"
-python -m alpha101.cli.research_server
+..\microcap_alpha\scripts\export_alphaprobe_for_alpha101.ps1
+.\scripts\start_alphaprobe_lab.ps1
 ```
+
+The export script uses a raw cache window that starts before the first signal
+date so expressions with `Ref` and rolling windows have enough history. The
+default current snapshot is the 317-factor `snapshot_iter354_accepted317_20260618`.
 
 4. Use alpha101 to inspect:
    - signed factor direction from mining ICIR,
