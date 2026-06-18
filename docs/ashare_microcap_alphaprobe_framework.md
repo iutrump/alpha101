@@ -32,11 +32,23 @@ The default protocol is exposed by `GET /api/protocol`.
 ## Factor Flow
 
 1. Mine candidates in `microcap_alpha` with AlphaPROBE.
-2. Export accepted factors into a weekly or daily external-factor CSV.
+2. Export accepted factors into weekly or daily external-factor CSV files.
 3. Start alpha101 with:
 
 ```powershell
-$env:ALPHA101_EXTERNAL_FACTOR_CSV="D:\path\to\accepted_factors_weekly.csv"
+python -m microcap_alpha.cli export-local-factor-values `
+  --data-dir "D:\path\to\research_full_2016_20260528_merged" `
+  --factor-library "D:\path\to\checkpoint.json" `
+  --output-dir "D:\path\to\alpha101_external_accepted317" `
+  --start-date 2022-05-31 `
+  --end-date 2025-12-27 `
+  --frequency weekly `
+  --weekly-signal-weekday 0 `
+  --trade-lag-days 1 `
+  --factor-workers 1 `
+  --filename-prefix microcap400_alphaprobe_weekly
+
+$env:ALPHA101_EXTERNAL_FACTOR_GLOB="D:\path\to\alpha101_external_accepted317\microcap400_alphaprobe_weekly_*.csv"
 $env:ALPHA101_ACCEPTED_SUMMARY_CSV="D:\path\to\accepted_summary.csv"
 python -m alpha101.cli.research_server
 ```
