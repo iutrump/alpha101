@@ -72,6 +72,7 @@
       </div>
       <input id="externalFactorSearch" class="external-search" placeholder="Search accepted factors..." />
       <select id="externalFactorSort" class="external-search">
+        <option value="selection">Sort: Selection</option>
         <option value="practical">Sort: Long-only excess</option>
         <option value="selected">Sort: Long-only return</option>
         <option value="mining_abs_icir">Sort: Mining |ICIR|</option>
@@ -81,6 +82,26 @@
       </select>
       <div id="externalFactorCount" class="muted" style="margin-top:6px;"></div>
       <div id="externalFactorList" class="external-list"><div class="muted" style="padding:12px;">Loading external factors...</div></div>
+      <div class="row" style="margin-top:16px;">
+        <div>
+          <div style="font-weight:800;">Portfolio Selection</div>
+          <div class="muted">Greedy filter by signed PnL similarity.</div>
+        </div>
+      </div>
+      <div class="row control-row">
+        <label for="selectionMax">Max</label>
+        <input id="selectionMax" type="number" min="1" max="200" value="20" />
+        <label for="selectionCorr">PnL Corr</label>
+        <input id="selectionCorr" type="number" min="0" max="0.999" step="0.01" value="0.75" />
+      </div>
+      <select id="selectionMethod" class="external-search">
+        <option value="pearson">Similarity: Pearson</option>
+        <option value="spearman">Similarity: Spearman</option>
+      </select>
+      <div class="row">
+        <button id="selectionBtn">Build Portfolio</button>
+      </div>
+      <div id="selectionSummary" class="muted" style="margin-top:8px;"></div>
       <div id="status"></div>
       <div id="metrics" class="metrics"></div>
     </section>
@@ -112,6 +133,11 @@
     const externalFactorSearchEl = document.getElementById("externalFactorSearch");
     const externalFactorSortEl = document.getElementById("externalFactorSort");
     const externalFactorCountEl = document.getElementById("externalFactorCount");
+    const selectionMaxEl = document.getElementById("selectionMax");
+    const selectionCorrEl = document.getElementById("selectionCorr");
+    const selectionMethodEl = document.getElementById("selectionMethod");
+    const selectionBtn = document.getElementById("selectionBtn");
+    const selectionSummaryEl = document.getElementById("selectionSummary");
     let factorRunId = null;
     let selectedSymbol = null;
     let selectedExternalFactor = null;
@@ -166,6 +192,33 @@
       });
       Plotly.newPlot("chart",traces,{margin:{l:45,r:20,t:10,b:40},paper_bgcolor:"#fffaf1",plot_bgcolor:"#fff",xaxis:{gridcolor:"#efe4d8"},yaxis:{gridcolor:"#efe4d8",title:"Equity"}},{responsive:true,displaylogo:false});
     }
+    function renderPortfolioChart(curve){
+      const x = curve.map(d => d.date);
+      const traces = [
+        {x,y:curve.map(d=>d.selected_cum),mode:"lines",name:"Selected Portfolio Net",line:{color:"#111827",width:3.2}},
+        {x,y:curve.map(d=>d.selected_cum_before_cost),mode:"lines",name:"Selected Portfolio Gross",line:{color:"#334155",width:1.8,dash:"dash"}},
+        {x,y:curve.map(d=>d.benchmark_cum),mode:"lines",name:"Universe Equal-Weight",line:{color:"#64748b",width:2,dash:"dash"}},
+        {x,y:curve.map(d=>d.excess_cum),mode:"lines",name:"Portfolio Excess Net",line:{color:"#0f766e",width:2.6,dash:"dot"}}
+      ];
+      Plotly.newPlot("chart", traces, {margin:{l:45,r:20,t:10,b:40},paper_bgcolor:"#fffaf1",plot_bgcolor:"#fff",xaxis:{gridcolor:"#efe4d8"},yaxis:{gridcolor:"#efe4d8",title:"Equity"}},{responsive:true,displaylogo:false});
+    }
+    function renderSelectionMetrics(stats, curve){
+      const last = curve.length ? curve[curve.length - 1] : {};
+      const items = [
+        ["Portfolio Factors", `${stats.selected_count}/${stats.candidate_count}`],
+        ["Rejected Similar", String(stats.rejected_similarity_count)],
+        ["Rejected Capacity", String(stats.rejected_capacity_count)],
+        ["PnL Corr Threshold", num(stats.pnl_corr_threshold)],
+        ["PnL Corr Method", stats.pnl_corr_method || "pearson"],
+        ["Selection Scope", stats.selection_scope || "in_sample_full_history"],
+        ["Max Selected PnL Corr", num(stats.max_abs_selected_pnl_corr)],
+        ["Avg Selected PnL Corr", num(stats.avg_abs_selected_pnl_corr)],
+        ["Portfolio Net Return", pct((last.selected_cum ?? 1) - 1)],
+        ["Portfolio Excess Net", pct((last.excess_cum ?? 1) - 1)],
+        ["Score Column", stats.score_column || "selected_excess_returns"]
+      ];
+      metricsEl.innerHTML = items.map(([k,v])=>`<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+    }
     function renderSymbolList(view){
       factorRunId = view.run_id;
       selectedRankMeaning = view.rank_meaning || "";
@@ -211,11 +264,14 @@
         const weeks = item.full_obs_count ?? item.obs_count ?? "-";
         const valid = item.obs_count ?? "-";
         const dir = Number(item.direction || 1) >= 0 ? "Buy high" : "Buy low";
+        const selection = item.selection_status === "selected" ? `Selected #${item.selection_rank}` : item.selection_status === "rejected" ? "Rejected" : dir;
+        const reason = item.selection_reason && item.selection_reason !== "kept" ? ` · reason ${item.selection_reason}` : "";
+        const pnlCorr = item.nearest_selected_factor ? ` · pnlCorr ${Number(item.max_selected_pnl_corr || 0).toFixed(3)} vs ${item.nearest_selected_factor}` : "";
         return `
           <button class="external-item ${factor === selectedExternalFactor ? "active" : ""}" data-factor="${factor}">
             <span class="name">${factor}</span>
-            <span class="score">${dir}</span>
-            <span class="meta">excess ${ret} · mining ICIR ${miningIcir} · maxCorr ${maxCorr} · research ICIR ${score} · weeks ${weeks} · valid ${valid}</span>
+            <span class="score">${selection}</span>
+            <span class="meta">${dir} · excess ${ret} · mining ICIR ${miningIcir} · maxCorr ${maxCorr} · research ICIR ${score} · weeks ${weeks} · valid ${valid}${reason}${pnlCorr}</span>
           </button>
         `;
       }).join("");
@@ -232,6 +288,11 @@
       return [...factors].sort((a,b) => {
         if(mode === "max_corr"){
           return (metricValue(a,"max_corr") ?? 999) - (metricValue(b,"max_corr") ?? 999);
+        }
+        if(mode === "selection"){
+          const aRank = a.selection_status === "selected" ? Number(a.selection_rank || 999) : 1000 + Math.abs(metricValue(a,"max_selected_pnl_corr") ?? 0);
+          const bRank = b.selection_status === "selected" ? Number(b.selection_rank || 999) : 1000 + Math.abs(metricValue(b,"max_selected_pnl_corr") ?? 0);
+          return aRank - bRank;
         }
         if(mode === "mining_abs_icir"){
           return Math.abs(metricValue(b,"rank_icir") ?? 0) - Math.abs(metricValue(a,"rank_icir") ?? 0);
@@ -281,6 +342,39 @@
       } catch(err) {
         statusEl.textContent = `Failed: ${err.message}`;
       } finally {
+        runBtn.disabled = false;
+      }
+    }
+    async function runExternalSelection(){
+      syncGroupInputs();
+      const n_quintiles = Number(nqEl.value) || 5;
+      const max_factors = Number(selectionMaxEl.value) || 20;
+      const pnl_corr_threshold = Number(selectionCorrEl.value) || 0.75;
+      const pnl_corr_method = selectionMethodEl.value || "pearson";
+      selectionBtn.disabled = true;
+      runBtn.disabled = true;
+      statusEl.textContent = `Building PnL-diversified portfolio...`;
+      selectionSummaryEl.textContent = "";
+      try {
+        const resp = await fetch("/api/external-factor-selection", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({n_quintiles, transaction_cost: 0.001, max_factors, pnl_corr_threshold, pnl_corr_method, score_column: "selected_excess_returns"})
+        });
+        const data = await resp.json();
+        if(!resp.ok){ throw new Error(data.detail || "External factor selection failed"); }
+        allExternalFactors = data.factors || allExternalFactors;
+        externalFactorSortEl.value = "selection";
+        renderExternalFactors(allExternalFactors);
+        renderPortfolioChart(data.curve || []);
+        renderSelectionMetrics(data.stats || {}, data.curve || []);
+        const stats = data.stats || {};
+        selectionSummaryEl.textContent = `Selected ${stats.selected_count || 0}/${stats.candidate_count || 0}, rejected similar ${stats.rejected_similarity_count || 0}, max selected pnl corr ${(Number(stats.max_abs_selected_pnl_corr || 0)).toFixed(3)}.`;
+        statusEl.textContent = `Done portfolio selection: ${data.curve.length} points`;
+      } catch(err) {
+        statusEl.textContent = `Failed: ${err.message}`;
+      } finally {
+        selectionBtn.disabled = false;
         runBtn.disabled = false;
       }
     }
@@ -362,6 +456,7 @@
     nqEl.addEventListener("change", syncGroupInputs);
     externalFactorSearchEl.addEventListener("input", () => renderExternalFactors(allExternalFactors));
     externalFactorSortEl.addEventListener("change", () => renderExternalFactors(allExternalFactors));
+    selectionBtn.addEventListener("click", runExternalSelection);
     syncGroupInputs();
     runBtn.addEventListener("click", runBacktest);
     loadExternalFactors().then(factors => {

@@ -3,7 +3,11 @@ from __future__ import annotations
 import pandas as pd
 
 from alpha101.data.external import build_external_factor_wide_frame, infer_external_factor_columns
-from alpha101.factors.evaluation.external import build_external_factor_curve, score_external_factors
+from alpha101.factors.evaluation.external import (
+    build_external_factor_curve,
+    score_external_factors,
+    select_external_factors_by_pnl_similarity,
+)
 
 
 def _external_factor_frame() -> pd.DataFrame:
@@ -22,6 +26,50 @@ def _external_factor_frame() -> pd.DataFrame:
                     "label_5d": target,
                     "probe_0001": target * 10.0,
                     "post10x30_0002": -target * 5.0,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _external_selection_frame() -> pd.DataFrame:
+    rows = []
+    targets = [
+        [0.01, 0.02, 0.04, -0.01],
+        [0.04, -0.01, 0.02, 0.01],
+        [0.02, 0.04, -0.01, 0.01],
+        [-0.01, 0.01, 0.04, 0.02],
+        [0.03, 0.02, -0.01, 0.04],
+        [0.01, 0.04, 0.02, -0.01],
+    ]
+    good_orders = [
+        [1, 2, 4, 3],
+        [4, 1, 3, 2],
+        [2, 4, 1, 3],
+        [1, 2, 4, 3],
+        [3, 2, 1, 4],
+        [1, 4, 2, 3],
+    ]
+    diverse_orders = [
+        [1, 4, 2, 3],
+        [2, 3, 4, 1],
+        [4, 1, 3, 2],
+        [3, 4, 1, 2],
+        [4, 1, 2, 3],
+        [2, 1, 4, 3],
+    ]
+    codes = ["000001.XSHE", "600000.XSHG", "920001.XBEI", "300001.XSHE"]
+    for date_idx, dt in enumerate(pd.date_range("2025-01-07", periods=len(targets), freq="7D")):
+        for code_idx, code in enumerate(codes):
+            good = float(good_orders[date_idx][code_idx])
+            diverse = float(diverse_orders[date_idx][code_idx])
+            rows.append(
+                {
+                    "date": dt,
+                    "code": code,
+                    "label_5d": targets[date_idx][code_idx],
+                    "good": good,
+                    "good_clone": good * 10.0,
+                    "diverse": diverse,
                 }
             )
     return pd.DataFrame(rows)
@@ -92,3 +140,38 @@ def test_score_external_factors_supports_signed_long_only_metrics(tmp_path):
         "excess_cum",
     }.issubset(curve.columns)
     assert curve["selected_cum"].iloc[-1] > curve["benchmark_cum"].iloc[-1]
+
+
+def test_select_external_factors_filters_by_signed_pnl_similarity(tmp_path):
+    csv_path = tmp_path / "accepted.csv"
+    _external_selection_frame().to_csv(csv_path, index=False)
+    wide = build_external_factor_wide_frame(csv_path)
+    summary = pd.DataFrame(
+        [
+            {"factor": "good", "selected_excess_returns": 1.0, "direction": 1},
+            {"factor": "good_clone", "selected_excess_returns": 0.9, "direction": 1},
+            {"factor": "diverse", "selected_excess_returns": 0.8, "direction": 1},
+        ]
+    )
+
+    result = select_external_factors_by_pnl_similarity(
+        wide,
+        summary,
+        n_quantiles=2,
+        transaction_cost=0.0,
+        max_factors=2,
+        pnl_corr_threshold=0.95,
+        score_column="selected_excess_returns",
+    )
+
+    selected = result["selected"].set_index("factor")
+    rejected = result["rejected"].set_index("factor")
+    assert list(selected.index) == ["good", "diverse"]
+    assert rejected.loc["good_clone", "selection_reason"] == "pnl_similarity"
+    assert rejected.loc["good_clone", "nearest_selected_factor"] == "good"
+    assert rejected.loc["good_clone", "max_selected_pnl_corr"] >= 0.99
+    assert result["stats"]["selected_count"] == 2
+    assert result["stats"]["rejected_similarity_count"] == 1
+    assert {"date", "selected_cum", "benchmark_cum", "excess_cum", "selected_factor_count"}.issubset(
+        result["curve"].columns
+    )

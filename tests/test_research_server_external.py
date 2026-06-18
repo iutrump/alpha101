@@ -109,3 +109,74 @@ def test_research_server_uses_accepted_summary_for_direction_and_metadata(monkey
     assert body["factor_view"]["direction"] == -1
     assert body["factor_view"]["rank_meaning"] == "lowest factor values are selected"
     assert body["factor_view"]["symbols"][0]["symbol"] == "000001.XSHE"
+
+
+def test_research_server_selects_external_portfolio_with_pnl_similarity_filter(monkeypatch, tmp_path):
+    rows = []
+    targets = [
+        [0.01, 0.02, 0.04, -0.01],
+        [0.04, -0.01, 0.02, 0.01],
+        [0.02, 0.04, -0.01, 0.01],
+        [-0.01, 0.01, 0.04, 0.02],
+        [0.03, 0.02, -0.01, 0.04],
+        [0.01, 0.04, 0.02, -0.01],
+    ]
+    good_orders = [
+        [1, 2, 4, 3],
+        [4, 1, 3, 2],
+        [2, 4, 1, 3],
+        [1, 2, 4, 3],
+        [3, 2, 1, 4],
+        [1, 4, 2, 3],
+    ]
+    diverse_orders = [
+        [1, 4, 2, 3],
+        [2, 3, 4, 1],
+        [4, 1, 3, 2],
+        [3, 4, 1, 2],
+        [4, 1, 2, 3],
+        [2, 1, 4, 3],
+    ]
+    codes = ["000001.XSHE", "600000.XSHG", "920001.XBEI", "300001.XSHE"]
+    for date_idx, dt in enumerate(pd.date_range("2025-01-07", periods=len(targets), freq="7D")):
+        for code_idx, code in enumerate(codes):
+            good = float(good_orders[date_idx][code_idx])
+            diverse = float(diverse_orders[date_idx][code_idx])
+            rows.append(
+                {
+                    "date": dt,
+                    "code": code,
+                    "label_5d": targets[date_idx][code_idx],
+                    "good": good,
+                    "good_clone": good * 10.0,
+                    "diverse": diverse,
+                }
+            )
+    csv_path = tmp_path / "accepted.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    wide = build_external_factor_wide_frame(csv_path)
+    monkeypatch.setattr(server, "_context", {"wide_data": wide, "external_wide": wide, "cfg": None, "engine": None})
+    client = TestClient(server.app)
+
+    response = client.post(
+        "/api/external-factor-selection",
+        json={
+            "n_quintiles": 2,
+            "max_factors": 2,
+            "pnl_corr_threshold": 0.95,
+            "pnl_corr_method": "spearman",
+            "transaction_cost": 0.0,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["stats"]["selected_count"] == 2
+    assert body["stats"]["pnl_corr_method"] == "spearman"
+    assert body["stats"]["selection_scope"] == "in_sample_full_history"
+    assert body["stats"]["rejected_similarity_count"] >= 1
+    assert len(body["curve"]) == 6
+    assert {item["factor"] for item in body["selected"]} == {"good", "diverse"}
+    rejected = {item["factor"]: item for item in body["rejected"]}
+    assert rejected["good_clone"]["selection_reason"] == "pnl_similarity"

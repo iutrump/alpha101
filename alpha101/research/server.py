@@ -22,6 +22,7 @@ from alpha101.factors.evaluation.external import (
     build_external_factor_curve,
     external_factor_names,
     score_external_factors,
+    select_external_factors_by_pnl_similarity,
 )
 from alpha101.factors.operator_lib import process_factor_wide_format
 from alpha101.factors.expression import FastExpressionEngine
@@ -48,6 +49,15 @@ class ExternalBacktestRequest(BaseModel):
     n_quintiles: int = Field(5, ge=2, le=50)
     transaction_cost: float = Field(0.001, ge=0.0, le=0.1)
     direction: int | None = None
+
+
+class ExternalSelectionRequest(BaseModel):
+    n_quintiles: int = Field(5, ge=2, le=50)
+    transaction_cost: float = Field(0.001, ge=0.0, le=0.1)
+    max_factors: int = Field(20, ge=1, le=200)
+    pnl_corr_threshold: float = Field(0.75, ge=0.0, le=0.999)
+    pnl_corr_method: str = Field("pearson", pattern="^(pearson|spearman)$")
+    score_column: str = Field("selected_excess_returns", min_length=1, max_length=100)
 
 
 def _load_context() -> dict[str, Any]:
@@ -402,6 +412,48 @@ def list_external_factors() -> dict[str, Any]:
     else:
         factors = _records(summary)
     return {"success": True, "factors": factors}
+
+
+@app.post("/api/external-factor-selection")
+def run_external_factor_selection(payload: ExternalSelectionRequest) -> dict[str, Any]:
+    ctx = get_context()
+    external_wide = _get_external_wide(ctx)
+    n_quantiles = _effective_external_quantiles(external_wide, payload.n_quintiles)
+    try:
+        result = select_external_factors_by_pnl_similarity(
+            external_wide,
+            _get_external_summary(ctx),
+            n_quantiles=n_quantiles,
+            transaction_cost=payload.transaction_cost,
+            max_factors=payload.max_factors,
+            pnl_corr_threshold=payload.pnl_corr_threshold,
+            pnl_corr_method=payload.pnl_corr_method,
+            score_column=payload.score_column,
+            directions=_external_directions(ctx),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "config": {
+            "mode": "external_precomputed_selection",
+            "n_quintiles": int(n_quantiles),
+            "transaction_cost": float(payload.transaction_cost),
+            "max_factors": int(payload.max_factors),
+            "pnl_corr_threshold": float(payload.pnl_corr_threshold),
+            "pnl_corr_method": str(payload.pnl_corr_method),
+            "score_column": str(payload.score_column),
+        },
+        "selected": _records(result["selected"]),
+        "rejected": _records(result["rejected"]),
+        "factors": _records(result["factors"]),
+        "curve": _records(result["curve"]),
+        "stats": {str(key): _json_safe_value(value) for key, value in result["stats"].items()},
+        "similarity_pairs": [
+            {str(key): _json_safe_value(value) for key, value in item.items()}
+            for item in result["similarity_pairs"]
+        ],
+    }
 
 
 @app.post("/api/external-factor-backtest/{factor_name}")

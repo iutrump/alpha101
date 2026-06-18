@@ -9,3 +9,6 @@ def test_research_template_exposes_external_factor_browser():
     assert "externalFactorList" in html
     assert "/api/external-factors" in html
     assert "/api/external-factor-backtest/" in html
+    assert "/api/external-factor-selection" in html
+    assert "selectionCorr" in html
+    assert "selectionMethod" in html
