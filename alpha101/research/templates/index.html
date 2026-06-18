@@ -71,6 +71,14 @@
         </div>
       </div>
       <input id="externalFactorSearch" class="external-search" placeholder="Search accepted factors..." />
+      <select id="externalFactorSort" class="external-search">
+        <option value="practical">Sort: Long-only excess</option>
+        <option value="selected">Sort: Long-only return</option>
+        <option value="mining_abs_icir">Sort: Mining |ICIR|</option>
+        <option value="mining_icir">Sort: Mining ICIR</option>
+        <option value="max_corr">Sort: Lower max_corr</option>
+        <option value="fitness">Sort: Research fitness</option>
+      </select>
       <div id="externalFactorCount" class="muted" style="margin-top:6px;"></div>
       <div id="externalFactorList" class="external-list"><div class="muted" style="padding:12px;">Loading external factors...</div></div>
       <div id="status"></div>
@@ -102,16 +110,21 @@
     const detailHeadEl = document.getElementById("detailHead");
     const externalFactorListEl = document.getElementById("externalFactorList");
     const externalFactorSearchEl = document.getElementById("externalFactorSearch");
+    const externalFactorSortEl = document.getElementById("externalFactorSort");
     const externalFactorCountEl = document.getElementById("externalFactorCount");
     let factorRunId = null;
     let selectedSymbol = null;
     let selectedExternalFactor = null;
+    let selectedRankMeaning = "";
     let allExternalFactors = [];
     const pct = v => `${(v * 100).toFixed(2)}%`;
     const num = v => Number(v).toFixed(4);
     const maybeNum = v => v === null || v === undefined || Number.isNaN(Number(v)) ? "N/A" : Number(v).toFixed(6);
     const rankText = item => item.rank ? `${item.rank}/${item.total}` : `-/${item.total || "-"}`;
-    function renderMetrics(m){ const items=[["Sharpe",num(m.sharpe)],["Sharpe (After Cost)",num(m.sharpe_after_cost)],["CAGR",pct(m.cagr)],["CAGR (After Cost)",pct(m.cagr_after_cost)],["Annual Returns",pct(m.returns)],["Annual Returns (After Cost)",pct(m.returns_after_cost)],["Annual Cost Drag",pct(m.annual_cost_drag)],["Funding (Annualized)",pct(m.funding_annual)],["Max Drawdown",pct(m.drawdown)],["Win Rate",pct(m.win_rate)],["Turnover",pct(m.turnover)],["Margin",num(m.margin)],["Margin (After Cost)",num(m.margin_after_cost)],["Single Fee",pct(m.single_side_fee)],["Round-Trip Fee",pct(m.round_trip_fee)],["Avg Long Funding",pct(m.avg_long_funding)],["Avg Short Funding",pct(m.avg_short_funding)],["IC Mean",num(m.ic_mean)],["IC IR",num(m.ic_ir)],["Observations",String(m.obs_count)],["Symbols",String(m.symbols)]];
+    function renderMetrics(m){ const buyGroup = m.buy_group || (Number(m.direction || 1) >= 0 ? Number(nqEl.value || 5) : 1);
+      const dirText = Number(m.direction || 1) >= 0 ? `Buy high (Q${buyGroup})` : `Buy low (Q${buyGroup})`;
+      const sourceText = m.direction_source === "accepted_summary_rank_icir" ? "Mining ICIR" : "Research ICIR";
+      const items=[["Direction",dirText],["Direction Source",sourceText],["Selected Return Net",pct(m.selected_returns ?? 0)],["Selected Return Gross",pct(m.selected_returns_before_cost ?? m.selected_returns ?? 0)],["Universe Return",pct(m.universe_returns ?? 0)],["Selected Excess Net",pct(m.selected_excess_returns ?? 0)],["Selected Excess Gross",pct(m.selected_excess_returns_before_cost ?? m.selected_excess_returns ?? 0)],["Selected DD",pct(m.selected_drawdown ?? 0)],["Selected Turnover",pct(m.selected_turnover ?? 0)],["Selected Cost Drag",pct(m.selected_cost_drag ?? 0)],["Mining ICIR",m.rank_icir === undefined || m.rank_icir === null ? "N/A" : num(m.rank_icir)],["Max Corr",m.max_corr === undefined || m.max_corr === null ? "N/A" : num(m.max_corr)],["Sharpe",num(m.sharpe)],["Sharpe (After Cost)",num(m.sharpe_after_cost)],["Annual Returns",pct(m.returns)],["Annual Returns (After Cost)",pct(m.returns_after_cost)],["Max Drawdown",pct(m.drawdown)],["Win Rate",pct(m.win_rate)],["Turnover",pct(m.turnover)],["IC Mean",num(m.ic_mean)],["IC IR",num(m.ic_ir)],["Weeks",String(m.full_obs_count ?? m.selected_valid_count ?? m.obs_count)],["Valid Segment",String(m.obs_count)],["Symbols",String(m.symbols)]];
       metricsEl.innerHTML=items.map(([k,v])=>`<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`).join(""); }
     function renderChart(curve, nQuintiles, longGroup, shortGroup){
       const x=curve.map(d=>d.date);
@@ -128,24 +141,34 @@
           });
         }
       }
+      if(curve.some(d => d.selected_cum !== undefined && d.selected_cum !== null)){
+        traces.push({x,y:curve.map(d=>d.selected_cum),mode:"lines",name:`Long Only Selected (Q${longGroup})`,line:{color:"#111827",width:3.2}});
+      }
+      if(curve.some(d => d.benchmark_cum !== undefined && d.benchmark_cum !== null)){
+        traces.push({x,y:curve.map(d=>d.benchmark_cum),mode:"lines",name:"Universe Equal-Weight",line:{color:"#64748b",width:2,dash:"dash"}});
+      }
+      if(curve.some(d => d.excess_cum !== undefined && d.excess_cum !== null)){
+        traces.push({x,y:curve.map(d=>d.excess_cum),mode:"lines",name:"Selected Excess",line:{color:"#0f766e",width:2.4,dash:"dot"}});
+      }
       traces.push({
         x,
         y:curve.map(d=>d.cum_pnl),
         mode:"lines",
-        name:`Long-Short (Q${longGroup}-Q${shortGroup})`,
+        name:`Signed Spread Diagnostic (Q${longGroup}-Q${shortGroup})`,
         line:{color:"#be4f2e",width:3}
       });
       traces.push({
         x,
         y:curve.map(d=>d.cum_pnl_net),
         mode:"lines",
-        name:`Long-Short Net (Q${longGroup}-Q${shortGroup}, After Cost)`,
+        name:`Signed Spread Net Diagnostic`,
         line:{color:"#1d6e45",width:2.4,dash:"dot"}
       });
       Plotly.newPlot("chart",traces,{margin:{l:45,r:20,t:10,b:40},paper_bgcolor:"#fffaf1",plot_bgcolor:"#fff",xaxis:{gridcolor:"#efe4d8"},yaxis:{gridcolor:"#efe4d8",title:"Equity"}},{responsive:true,displaylogo:false});
     }
     function renderSymbolList(view){
       factorRunId = view.run_id;
+      selectedRankMeaning = view.rank_meaning || "";
       const symbols = view.symbols || [];
       if(!symbols.length){
         symbolListEl.innerHTML = `<div class="muted" style="padding:12px;">No factor values available.</div>`;
@@ -168,7 +191,8 @@
     }
     function renderExternalFactors(factors){
       const query = externalFactorSearchEl.value.trim().toLowerCase();
-      const visibleFactors = query ? factors.filter(item => String(item.factor).toLowerCase().includes(query)) : factors;
+      const sorted = sortExternalFactors(factors);
+      const visibleFactors = query ? sorted.filter(item => String(item.factor).toLowerCase().includes(query)) : sorted;
       externalFactorCountEl.textContent = `${visibleFactors.length}/${factors.length} accepted factors`;
       if(!factors.length){
         externalFactorListEl.innerHTML = `<div class="muted" style="padding:12px;">No external factors configured.</div>`;
@@ -181,20 +205,40 @@
       externalFactorListEl.innerHTML = visibleFactors.map(item => {
         const factor = item.factor;
         const score = item.ic_ir === undefined || item.ic_ir === null ? "N/A" : Number(item.ic_ir).toFixed(3);
-        const ret = item.returns === undefined || item.returns === null ? "N/A" : `${(Number(item.returns) * 100).toFixed(2)}%`;
+        const miningIcir = item.rank_icir === undefined || item.rank_icir === null ? "N/A" : Number(item.rank_icir).toFixed(3);
+        const maxCorr = item.max_corr === undefined || item.max_corr === null ? "N/A" : Number(item.max_corr).toFixed(3);
+        const ret = item.selected_excess_returns === undefined || item.selected_excess_returns === null ? "N/A" : `${(Number(item.selected_excess_returns) * 100).toFixed(2)}%`;
         const weeks = item.full_obs_count ?? item.obs_count ?? "-";
         const valid = item.obs_count ?? "-";
+        const dir = Number(item.direction || 1) >= 0 ? "Buy high" : "Buy low";
         return `
           <button class="external-item ${factor === selectedExternalFactor ? "active" : ""}" data-factor="${factor}">
             <span class="name">${factor}</span>
-            <span class="score">ICIR ${score}</span>
-            <span class="meta">return ${ret} · weeks ${weeks} · valid ${valid}</span>
+            <span class="score">${dir}</span>
+            <span class="meta">excess ${ret} · mining ICIR ${miningIcir} · maxCorr ${maxCorr} · research ICIR ${score} · weeks ${weeks} · valid ${valid}</span>
           </button>
         `;
       }).join("");
       for(const button of externalFactorListEl.querySelectorAll(".external-item")){
         button.addEventListener("click", () => runExternalFactor(button.dataset.factor));
       }
+    }
+    function metricValue(item, key){
+      const value = Number(item[key]);
+      return Number.isFinite(value) ? value : null;
+    }
+    function sortExternalFactors(factors){
+      const mode = externalFactorSortEl.value;
+      return [...factors].sort((a,b) => {
+        if(mode === "max_corr"){
+          return (metricValue(a,"max_corr") ?? 999) - (metricValue(b,"max_corr") ?? 999);
+        }
+        if(mode === "mining_abs_icir"){
+          return Math.abs(metricValue(b,"rank_icir") ?? 0) - Math.abs(metricValue(a,"rank_icir") ?? 0);
+        }
+        const key = mode === "selected" ? "selected_returns" : mode === "mining_icir" ? "rank_icir" : mode === "fitness" ? "fitness" : "selected_excess_returns";
+        return (metricValue(b,key) ?? -Infinity) - (metricValue(a,key) ?? -Infinity);
+      });
     }
     async function loadExternalFactors(){
       try {
@@ -229,8 +273,9 @@
         const data = await resp.json();
         if(!resp.ok){ throw new Error(data.detail || "External factor backtest failed"); }
         const usedQuantiles = data.config?.n_quintiles || n_quintiles;
+        const buyGroup = data.config?.buy_group || usedQuantiles;
         renderMetrics(data.metrics);
-        renderChart(data.curve, usedQuantiles, usedQuantiles, 1);
+        renderChart(data.curve, usedQuantiles, buyGroup, Number(buyGroup) === 1 ? usedQuantiles : 1);
         renderSymbolList(data.factor_view);
         statusEl.textContent = `Done external factor: ${factor}, ${data.curve.length} points`;
       } catch(err) {
@@ -269,6 +314,7 @@
         <span class="value">date ${latest.date}</span>
         <span class="value">raw ${maybeNum(latest.raw_factor)}</span>
         <span class="value">rank ${latest.rank ? `${latest.rank}/${latest.total}` : `-/${latest.total || "-"}`}</span>
+        ${selectedRankMeaning ? `<span class="value">rank 1: ${selectedRankMeaning}</span>` : ""}
       `;
       const x = rows.map(row => row.date);
       const traces = [
@@ -315,6 +361,7 @@
     }
     nqEl.addEventListener("change", syncGroupInputs);
     externalFactorSearchEl.addEventListener("input", () => renderExternalFactors(allExternalFactors));
+    externalFactorSortEl.addEventListener("change", () => renderExternalFactors(allExternalFactors));
     syncGroupInputs();
     runBtn.addEventListener("click", runBacktest);
     loadExternalFactors().then(factors => {

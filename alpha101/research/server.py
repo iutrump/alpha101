@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import os
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -46,6 +47,7 @@ class BacktestRequest(BaseModel):
 class ExternalBacktestRequest(BaseModel):
     n_quintiles: int = Field(5, ge=2, le=50)
     transaction_cost: float = Field(0.001, ge=0.0, le=0.1)
+    direction: int | None = None
 
 
 def _load_context() -> dict[str, Any]:
@@ -101,7 +103,26 @@ def _json_int(value) -> int | None:
     return int(value)
 
 
-def _build_factor_view(wide_data: pd.DataFrame, raw_factor: pd.DataFrame) -> dict[str, Any]:
+def _json_safe_value(value):
+    if value is None:
+        return None
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, float) and (pd.isna(value) or value in (float("inf"), float("-inf"))):
+        return None
+    if pd.isna(value):
+        return None
+    return value
+
+
+def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    rows = []
+    for record in frame.to_dict(orient="records"):
+        rows.append({str(key): _json_safe_value(value) for key, value in record.items()})
+    return rows
+
+
+def _build_factor_view(wide_data: pd.DataFrame, raw_factor: pd.DataFrame, *, direction: int = 1) -> dict[str, Any]:
     global _factor_view, _factor_view_seq
     symbols = [
         symbol
@@ -111,7 +132,7 @@ def _build_factor_view(wide_data: pd.DataFrame, raw_factor: pd.DataFrame) -> dic
     if not symbols:
         symbols = list(raw_factor.columns)
     raw_factor = raw_factor.reindex(columns=symbols)
-    ranks = raw_factor.rank(axis=1, method="min", ascending=False, na_option="keep")
+    ranks = raw_factor.rank(axis=1, method="min", ascending=int(direction) < 0, na_option="keep")
     totals = raw_factor.notna().sum(axis=1)
     valid_dates = raw_factor.dropna(how="all").index
     latest_date = valid_dates[-1] if len(valid_dates) else raw_factor.index[-1]
@@ -143,12 +164,16 @@ def _build_factor_view(wide_data: pd.DataFrame, raw_factor: pd.DataFrame) -> dic
             "raw_factor": raw_factor,
             "ranks": ranks,
             "totals": totals,
+            "direction": int(1 if int(direction) >= 0 else -1),
+            "rank_meaning": "highest factor values are selected" if int(direction) >= 0 else "lowest factor values are selected",
         }
         _factor_view = view
     return {
         "run_id": run_id,
         "latest_date": str(latest_date),
         "symbols": summary,
+        "direction": int(1 if int(direction) >= 0 else -1),
+        "rank_meaning": "highest factor values are selected" if int(direction) >= 0 else "lowest factor values are selected",
     }
 
 
@@ -177,9 +202,85 @@ def _get_external_summary(ctx: dict[str, Any]) -> pd.DataFrame:
             external_wide,
             n_quantiles=_default_external_quantiles(external_wide),
             min_segment_obs=1,
+            directions=_external_directions(ctx),
         )
+        summary = _merge_accepted_metadata(summary, ctx)
         ctx["external_summary"] = summary
     return summary
+
+
+def _accepted_summary_path() -> Path | None:
+    raw_path = os.getenv("ALPHA101_ACCEPTED_SUMMARY_CSV")
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    return path if path.exists() else None
+
+
+def _get_accepted_summary(ctx: dict[str, Any]) -> pd.DataFrame:
+    accepted = ctx.get("accepted_summary")
+    if accepted is not None:
+        return accepted
+    path = _accepted_summary_path()
+    if path is None:
+        frame = pd.DataFrame()
+    else:
+        frame = pd.read_csv(path)
+        if "factor_id" in frame.columns:
+            frame = frame.rename(columns={"factor_id": "factor"})
+        keep = [
+            column
+            for column in [
+                "factor",
+                "rank_ic",
+                "rank_icir",
+                "max_corr",
+                "ic",
+                "icir",
+                "complexity",
+                "expression",
+            ]
+            if column in frame.columns
+        ]
+        frame = frame[keep].drop_duplicates("factor", keep="last") if keep else pd.DataFrame()
+    ctx["accepted_summary"] = frame
+    return frame
+
+
+def _external_directions(ctx: dict[str, Any]) -> dict[str, int]:
+    accepted = _get_accepted_summary(ctx)
+    if accepted.empty or "rank_icir" not in accepted.columns:
+        return {}
+    directions: dict[str, int] = {}
+    for _, row in accepted.iterrows():
+        value = pd.to_numeric(row.get("rank_icir"), errors="coerce")
+        if pd.notna(value):
+            directions[str(row["factor"])] = -1 if float(value) < 0 else 1
+    return directions
+
+
+def _external_direction_for_factor(ctx: dict[str, Any], factor_name: str) -> int | None:
+    directions = _external_directions(ctx)
+    if factor_name in directions:
+        return int(directions[factor_name])
+    summary = ctx.get("external_summary")
+    if isinstance(summary, pd.DataFrame) and not summary.empty and "direction" in summary.columns:
+        match = summary[summary["factor"].astype(str) == str(factor_name)]
+        if not match.empty and pd.notna(match.iloc[0].get("direction")):
+            return int(match.iloc[0]["direction"])
+    return None
+
+
+def _merge_accepted_metadata(summary: pd.DataFrame, ctx: dict[str, Any]) -> pd.DataFrame:
+    accepted = _get_accepted_summary(ctx)
+    if summary.empty or accepted.empty or "factor" not in accepted.columns:
+        return summary
+    merged = summary.merge(accepted, on="factor", how="left", suffixes=("", "_mining"))
+    if "rank_icir" in merged.columns:
+        merged["direction_source"] = merged["rank_icir"].apply(
+            lambda value: "accepted_summary_rank_icir" if pd.notna(value) else "research_ic_ir"
+        )
+    return merged
 
 
 def _default_external_quantiles(external_wide: pd.DataFrame) -> int:
@@ -206,7 +307,7 @@ def _external_metrics_for_response(metrics: dict[str, Any]) -> dict[str, Any]:
     out.setdefault("avg_long_funding", 0.0)
     out.setdefault("avg_short_funding", 0.0)
     out.setdefault("symbols", 0)
-    return out
+    return {str(key): _json_safe_value(value) for key, value in out.items()}
 
 
 def _load_index_html() -> str:
@@ -299,7 +400,7 @@ def list_external_factors() -> dict[str, Any]:
     if summary.empty:
         factors = [{"factor": name} for name in external_factor_names(external_wide)]
     else:
-        factors = summary.to_dict(orient="records")
+        factors = _records(summary)
     return {"success": True, "factors": factors}
 
 
@@ -313,23 +414,29 @@ def run_external_factor_backtest(factor_name: str, payload: ExternalBacktestRequ
     n_quantiles = _effective_external_quantiles(external_wide, payload.n_quintiles)
 
     try:
+        direction = payload.direction if payload.direction is not None else _external_direction_for_factor(ctx, factor_name)
+        directions = {factor_name: direction} if direction is not None else None
         summary = score_external_factors(
             external_wide,
             factor_names=[factor_name],
             n_quantiles=n_quantiles,
             min_segment_obs=1,
             transaction_cost=payload.transaction_cost,
+            directions=directions,
         )
+        summary = _merge_accepted_metadata(summary, ctx)
         metrics = summary.iloc[0].to_dict()
+        direction = int(metrics.get("direction", direction if direction is not None else 1))
         curve_df = build_external_factor_curve(
             external_wide,
             factor_name,
             n_quantiles=n_quantiles,
             transaction_cost=payload.transaction_cost,
+            direction=direction,
         )
         raw_factor = external_wide[factor_name]
         wide_data = ctx.get("wide_data", external_wide)
-        factor_view = _build_factor_view(wide_data, raw_factor)
+        factor_view = _build_factor_view(wide_data, raw_factor, direction=direction)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -340,9 +447,11 @@ def run_external_factor_backtest(factor_name: str, payload: ExternalBacktestRequ
             "mode": "external_precomputed",
             "n_quintiles": int(n_quantiles),
             "transaction_cost": float(payload.transaction_cost),
+            "direction": int(1 if direction >= 0 else -1),
+            "buy_group": int(n_quantiles if direction >= 0 else 1),
         },
         "metrics": _external_metrics_for_response(metrics),
-        "curve": curve_df.to_dict(orient="records"),
+        "curve": _records(curve_df),
         "factor_view": factor_view,
     }
 

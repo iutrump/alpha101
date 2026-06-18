@@ -53,3 +53,42 @@ def test_score_external_factors_and_curve_use_precomputed_target(tmp_path):
     assert summary.loc[summary["factor"] == "post10x30_0002", "ic_mean"].iloc[0] < 0
     assert {"date", "pnl", "cum_pnl", "cum_pnl_net"}.issubset(curve.columns)
     assert len(curve) == 4
+
+
+def test_score_external_factors_supports_signed_long_only_metrics(tmp_path):
+    csv_path = tmp_path / "accepted.csv"
+    _external_factor_frame().to_csv(csv_path, index=False)
+    wide = build_external_factor_wide_frame(csv_path)
+
+    summary = score_external_factors(
+        wide,
+        n_quantiles=3,
+        min_segment_obs=1,
+        mode="final",
+        annualization=52.0,
+        directions={"post10x30_0002": -1},
+    )
+    row = summary.set_index("factor").loc["post10x30_0002"]
+    curve = build_external_factor_curve(
+        wide,
+        "post10x30_0002",
+        n_quantiles=3,
+        transaction_cost=0.0,
+        direction=-1,
+    )
+
+    assert row["direction"] == -1
+    assert row["buy_group"] == 1
+    assert "selected_returns_before_cost" in row
+    assert "selected_excess_returns_before_cost" in row
+    assert "selected_turnover" in row
+    assert "selected_cost_drag" in row
+    assert row["selected_returns"] > row["universe_returns"]
+    assert {
+        "selected_cum_before_cost",
+        "selected_cum",
+        "benchmark_cum",
+        "excess_cum_before_cost",
+        "excess_cum",
+    }.issubset(curve.columns)
+    assert curve["selected_cum"].iloc[-1] > curve["benchmark_cum"].iloc[-1]
