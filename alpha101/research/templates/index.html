@@ -34,6 +34,14 @@
     .external-item .name { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .external-item .score { color:var(--accent); font-weight:700; }
     .external-item .meta { grid-column:1 / -1; color:var(--soft); font-size:12px; }
+    .protocol-panel { margin-top:12px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:10px; display:grid; gap:8px; }
+    .protocol-head { display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:800; }
+    .protocol-badge { border:1px solid var(--line); border-radius:999px; padding:2px 8px; color:var(--accent); font-size:12px; font-weight:800; }
+    .protocol-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .protocol-cell { border:1px solid #efe4d8; border-radius:8px; padding:6px 8px; min-width:0; }
+    .protocol-cell .k { color:var(--soft); font-size:11px; }
+    .protocol-cell .v { font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .protocol-rules { color:var(--soft); font-size:12px; line-height:1.45; }
     .external-search { width:100%; margin-top:8px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
     .detail-head { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; min-height:30px; margin-bottom:8px; }
     .detail-head .title { font-size:18px; font-weight:800; }
@@ -64,6 +72,7 @@
       <div class="row">
         <button id="runBtn">Run</button>
       </div>
+      <div id="protocolPanel" class="protocol-panel"><div class="muted">Loading protocol...</div></div>
       <div class="row" style="margin-top:16px;">
         <div>
           <div style="font-weight:800;">External Factors</div>
@@ -133,6 +142,7 @@
     const externalFactorSearchEl = document.getElementById("externalFactorSearch");
     const externalFactorSortEl = document.getElementById("externalFactorSort");
     const externalFactorCountEl = document.getElementById("externalFactorCount");
+    const protocolPanelEl = document.getElementById("protocolPanel");
     const selectionMaxEl = document.getElementById("selectionMax");
     const selectionCorrEl = document.getElementById("selectionCorr");
     const selectionMethodEl = document.getElementById("selectionMethod");
@@ -147,6 +157,36 @@
     const num = v => Number(v).toFixed(4);
     const maybeNum = v => v === null || v === undefined || Number.isNaN(Number(v)) ? "N/A" : Number(v).toFixed(6);
     const rankText = item => item.rank ? `${item.rank}/${item.total}` : `-/${item.total || "-"}`;
+    const shortDate = v => v ? String(v).slice(0, 10) : "N/A";
+    function renderProtocol(protocol){
+      const data = protocol.data || {};
+      const splitText = (protocol.splits || []).map(item => `${item.name} ${item.start}~${item.end}`).join(" · ");
+      const rules = (protocol.no_leakage_rules || []).slice(0, 2).join(" · ");
+      protocolPanelEl.innerHTML = `
+        <div class="protocol-head">
+          <span>Experiment Protocol</span>
+          <span class="protocol-badge">${protocol.universe || "universe"} · ${protocol.frequency || "freq"}</span>
+        </div>
+        <div class="protocol-grid">
+          <div class="protocol-cell"><div class="k">Rebalance</div><div class="v">${protocol.signal_weekday || "-"} signal, ${protocol.rebalance_weekday || "-"} trade</div></div>
+          <div class="protocol-cell"><div class="k">Factor Data</div><div class="v">${data.external_factor_count || 0} factors · ${data.symbol_count || 0} symbols</div></div>
+          <div class="protocol-cell"><div class="k">Date Range</div><div class="v">${shortDate(data.date_start)} ~ ${shortDate(data.date_end)}</div></div>
+          <div class="protocol-cell"><div class="k">Label Embargo</div><div class="v">${protocol.label_embargo_periods || 0} period</div></div>
+        </div>
+        <div class="protocol-rules">${splitText}</div>
+        <div class="protocol-rules">${rules}</div>
+      `;
+    }
+    async function loadProtocol(){
+      try {
+        const resp = await fetch("/api/protocol");
+        const data = await resp.json();
+        if(!resp.ok){ throw new Error(data.detail || "Protocol unavailable"); }
+        renderProtocol(data.protocol || {});
+      } catch(err) {
+        protocolPanelEl.innerHTML = `<div class="muted">Protocol unavailable: ${err.message}</div>`;
+      }
+    }
     function renderMetrics(m){ const buyGroup = m.buy_group || (Number(m.direction || 1) >= 0 ? Number(nqEl.value || 5) : 1);
       const dirText = Number(m.direction || 1) >= 0 ? `Buy high (Q${buyGroup})` : `Buy low (Q${buyGroup})`;
       const sourceText = m.direction_source === "accepted_summary_rank_icir" ? "Mining ICIR" : "Research ICIR";
@@ -459,6 +499,7 @@
     selectionBtn.addEventListener("click", runExternalSelection);
     syncGroupInputs();
     runBtn.addEventListener("click", runBacktest);
+    loadProtocol();
     loadExternalFactors().then(factors => {
       if(factors.length){
         runExternalFactor(factors[0].factor);

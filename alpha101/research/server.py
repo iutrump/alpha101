@@ -26,6 +26,7 @@ from alpha101.factors.evaluation.external import (
 )
 from alpha101.factors.operator_lib import process_factor_wide_format
 from alpha101.factors.expression import FastExpressionEngine
+from alpha101.experiments.protocol import ashare_microcap_weekly_protocol, protocol_to_dict
 
 
 app = FastAPI(title="Alpha101 Factor Research Server", version="1.0.0")
@@ -331,6 +332,14 @@ def home() -> HTMLResponse:
     return HTMLResponse(content=_load_index_html())
 
 
+@app.get("/api/protocol")
+def get_protocol() -> dict[str, Any]:
+    ctx = get_context()
+    protocol = protocol_to_dict(ashare_microcap_weekly_protocol())
+    protocol["data"] = _protocol_data_status(ctx)
+    return {"success": True, "protocol": protocol}
+
+
 @app.post("/api/backtest")
 def run_backtest(payload: BacktestRequest) -> dict[str, Any]:
     expression = payload.expression.strip()
@@ -511,6 +520,40 @@ def run_external_factor_backtest(factor_name: str, payload: ExternalBacktestRequ
 def _effective_external_quantiles(external_wide: pd.DataFrame, requested: int) -> int:
     target_symbols = len(external_wide["target"].columns)
     return max(2, min(int(requested), int(target_symbols)))
+
+
+def _protocol_data_status(ctx: dict[str, Any]) -> dict[str, Any]:
+    external_wide = ctx.get("external_wide")
+    wide_data = external_wide if external_wide is not None else ctx.get("wide_data")
+    date_start = None
+    date_end = None
+    symbol_count = 0
+    if isinstance(wide_data, pd.DataFrame) and len(wide_data.index):
+        date_start = str(wide_data.index.min())
+        date_end = str(wide_data.index.max())
+        if isinstance(wide_data.columns, pd.MultiIndex):
+            fields = set(wide_data.columns.get_level_values(0))
+            if "target" in fields:
+                symbol_count = len(wide_data["target"].columns)
+            else:
+                symbol_count = len(set(wide_data.columns.get_level_values(1)))
+
+    external_factor_count = 0
+    if isinstance(external_wide, pd.DataFrame):
+        external_factor_count = len(external_factor_names(external_wide))
+
+    accepted_summary = _get_accepted_summary(ctx)
+    return {
+        "date_start": date_start,
+        "date_end": date_end,
+        "symbol_count": int(symbol_count),
+        "external_factor_count": int(external_factor_count),
+        "accepted_summary_count": int(len(accepted_summary)),
+        "expression_engine_available": bool(ctx.get("engine") is not None),
+        "external_factor_source": os.getenv("ALPHA101_EXTERNAL_FACTOR_CSV")
+        or os.getenv("ALPHA101_EXTERNAL_FACTOR_GLOB"),
+        "ashare_source": os.getenv("ALPHA101_ASHARE_CSV"),
+    }
 
 
 @app.get("/api/factor-detail/{symbol}")

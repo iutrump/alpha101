@@ -12,3 +12,5 @@ def test_research_template_exposes_external_factor_browser():
     assert "/api/external-factor-selection" in html
     assert "selectionCorr" in html
     assert "selectionMethod" in html
+    assert "protocolPanel" in html
+    assert "/api/protocol" in html

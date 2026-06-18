@@ -180,3 +180,23 @@ def test_research_server_selects_external_portfolio_with_pnl_similarity_filter(m
     assert {item["factor"] for item in body["selected"]} == {"good", "diverse"}
     rejected = {item["factor"]: item for item in body["rejected"]}
     assert rejected["good_clone"]["selection_reason"] == "pnl_similarity"
+
+
+def test_research_server_exposes_ashare_microcap_protocol(monkeypatch, tmp_path):
+    wide = _external_wide(tmp_path)
+    monkeypatch.setattr(server, "_context", {"wide_data": wide, "external_wide": wide, "cfg": None, "engine": None})
+    client = TestClient(server.app)
+
+    response = client.get("/api/protocol")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    protocol = body["protocol"]
+    assert protocol["name"] == "ashare_microcap_weekly_alphaprobe"
+    assert protocol["rebalance_weekday"] == "Tuesday"
+    assert protocol["label_embargo_periods"] == 1
+    assert protocol["data"]["external_factor_count"] == 2
+    assert protocol["data"]["symbol_count"] == 3
+    assert protocol["data"]["date_start"] == "2025-01-07 00:00:00"
+    assert "fit selection and ridge weights using history only" in protocol["no_leakage_rules"]
